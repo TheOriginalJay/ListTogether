@@ -6,7 +6,7 @@ import { useToast } from '@/contexts/ToastContext';
 
 export default function LoginPage() {
   const navigate = useNavigate();
-  const { signIn, signInGoogle, isAuthenticated, loading: authLoading } = useAuth();
+  const { signIn, signInGoogle, isAuthenticated } = useAuth();
   const { showToast } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');

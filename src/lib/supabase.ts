@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import type { User as UserProfile, ShoppingList, ListItem, ListCollaborator as Collaborator } from '@/types';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
@@ -11,58 +12,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   },
 });
 
-export type UserProfile = {
-  id: string;
-  email: string;
-  full_name: string | null;
-  avatar_url: string | null;
-  subscription_status: string;
-  trial_ends_at: string | null;
-  created_at: string;
-};
-
-export type ShoppingList = {
-  id: string;
-  owner_id: string;
-  name: string;
-  privacy: 'private' | 'invite_only' | 'link_sharing';
-  invite_code: string;
-  share_token: string;
-  budget_cents: number | null;
-  layout_preference: 'compact' | 'standard' | 'visual';
-  created_at: string;
-  updated_at: string;
-  owner?: UserProfile;
-  items?: { count: number } | any[];
-};
-
-export type ListItem = {
-  id: string;
-  list_id: string;
-  name: string;
-  quantity: number;
-  unit: string | null;
-  category: string;
-  notes: string | null;
-  estimated_price_cents: number | null;
-  is_checked: boolean;
-  sort_order: number;
-  category_sort_order: number;
-  added_by: string;
-  created_at: string;
-  updated_at: string;
-};
-
-export type Collaborator = {
-  id: string;
-  list_id: string;
-  user_id: string | null;
-  email: string | null;
-  role: string;
-  invited_at: string;
-  accepted_at: string | null;
-  user?: UserProfile;
-};
+export type { UserProfile, ShoppingList, ListItem, Collaborator };
 
 // Auth helpers
 export async function signInWithEmail(email: string, password: string) {
