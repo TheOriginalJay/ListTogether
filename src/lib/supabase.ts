@@ -4,7 +4,11 @@ import type { User as UserProfile, ShoppingList, ListItem, ListCollaborator as C
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('Supabase credentials missing. Check your environment variables.');
+}
+
+export const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseAnonKey || 'placeholder', {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
@@ -106,7 +110,7 @@ export async function getListById(listId: string): Promise<ShoppingList | null> 
 export async function getListByShareToken(token: string): Promise<ShoppingList | null> {
   const { data, error } = await supabase
     .from('lists')
-    .select('*, items(*)')
+    .select('*, items(*), owner:users(full_name, email)')
     .eq('share_token', token)
     .eq('privacy', 'link_sharing')
     .single();

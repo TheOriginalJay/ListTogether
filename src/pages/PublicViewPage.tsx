@@ -34,6 +34,9 @@ export default function PublicViewPage() {
         setItems((data as any).items || []);
       }
       setLoading(false);
+    }).catch(err => {
+      console.error('Failed to fetch shared list:', err);
+      setLoading(false);
     });
   }, [token, user, navigate]);
 
