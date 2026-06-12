@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
-import { ClipboardList, CheckCircle, Users, Smartphone, ShoppingBasket, ArrowRight } from 'lucide-react';
+import { ClipboardList, CheckCircle, ShoppingBasket, ArrowRight } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import * as THREE from 'three';
 import { gsap } from 'gsap';

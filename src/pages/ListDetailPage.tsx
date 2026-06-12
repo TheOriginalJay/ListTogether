@@ -656,8 +656,8 @@ function EditItemForm({ item, onSave, onDelete, onClose }: {
 }) {
   const [name, setName] = useState(item.name);
   const [quantity, setQuantity] = useState(item.quantity.toString());
-  const [unit, setUnit] = useState(item.unit || '');
-  const [category, setCategory] = useState(item.category);
+  const unit = item.unit || '';
+  const category = item.category;
   const [price, setPrice] = useState(item.estimated_price_cents ? (item.estimated_price_cents / 100).toFixed(2) : '');
   const [notes, setNotes] = useState(item.notes || '');
 
@@ -697,6 +697,12 @@ function EditItemForm({ item, onSave, onDelete, onClose }: {
         </button>
         <button type="submit" className="flex-1 btn-primary">Update Item</button>
       </div>
+    </form>
+  );
+}
+
+
+div>
     </form>
   );
 }

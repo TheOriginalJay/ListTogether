@@ -101,7 +101,7 @@ export default function DashboardPage() {
     }
   };
 
-  const expired = subscriptionStatus === 'canceled' || (subscriptionStatus === 'trialing' && trialDaysLeft <= 0);
+  // const expired = subscriptionStatus === 'canceled' || (subscriptionStatus === 'trialing' && trialDaysLeft <= 0);
 
   return (
     <div className="min-h-screen bg-background">

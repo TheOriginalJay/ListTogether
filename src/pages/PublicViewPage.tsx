@@ -203,9 +203,9 @@ export default function PublicViewPage() {
                         onTouchMove={(e) => {
                           const touch = e.touches[0];
                           const startX = (e.currentTarget as any)._touchX || 0;
-                          const diff = touch.clientX - startX;
-                          if (diff > 50) {
-                            (e.currentTarget as HTMLElement).style.transform = `translateX(${Math.min(diff, 100)}px)`;
+                          const moveDiff = touch.clientX - startX;
+                          if (moveDiff > 50) {
+                            (e.currentTarget as HTMLElement).style.transform = `translateX(${Math.min(moveDiff, 100)}px)`;
                             (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(245, 158, 11, 0.1)';
                           }
                         }}
