@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router';
 import {
-  ClipboardList, LayoutGrid, LayoutList, Columns3, Check, Users,
+  ClipboardList, LayoutGrid, LayoutList, Columns3, Check, Users, Lock, ChevronLeft,
   Apple, Droplets, Beef, Croissant, Box, IceCream, Coffee, Bath, Cookie
 } from 'lucide-react';
 import { getListByShareToken, subscribeToList, joinListByCode } from '@/lib/supabase';
@@ -40,7 +40,6 @@ export default function PublicViewPage() {
     
     getListByShareToken(token).then(data => {
       if (data) {
-        // If user is already owner, redirect to full list
         if (user && data.owner_id === user.id) {
           navigate(`/list/${data.id}`, { replace: true });
           return;
@@ -60,18 +59,16 @@ export default function PublicViewPage() {
     if (!list || !isAuthenticated) return;
     setJoining(true);
     try {
-      // We use the invite_code from the list we just fetched via token
       await joinListByCode(list.invite_code);
-      showToast('Joined list!', 'success');
+      showToast('Joined household!', 'success');
       navigate(`/list/${list.id}`);
     } catch (err: any) {
-      showToast(err.message || 'Failed to join list', 'error');
+      showToast(err.message || 'Failed to join', 'error');
     } finally {
       setJoining(false);
     }
   };
 
-  // Realtime subscription for updates
   useEffect(() => {
     if (!list?.id) return;
     const subscription = subscribeToList(list.id, (payload) => {
@@ -116,19 +113,27 @@ export default function PublicViewPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-cream flex items-center justify-center">
-        <div className="w-8 h-8 border-3 border-amber border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="w-12 h-12 border-4 border-amber border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   if (!list) {
     return (
-      <div className="min-h-screen bg-cream flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-warm-600 mb-4">This list is not available or is private.</p>
+      <div className="min-h-screen bg-background flex items-center justify-center px-8">
+        <div className="text-center space-y-8">
+          <div className="w-24 h-24 rounded-3xl bg-warm-50 flex items-center justify-center mx-auto shadow-inner">
+            <Lock className="w-12 h-12 text-warm-200" />
+          </div>
+          <div className="space-y-2">
+            <h3 className="text-2xl font-display font-extrabold text-charcoal tracking-tight">Access Denied</h3>
+            <p className="text-warm-400 max-w-xs mx-auto leading-relaxed">
+              This list is private or no longer available.
+            </p>
+          </div>
           <button onClick={() => navigate('/')} className="btn-primary">
-            Go Home
+            Return Home
           </button>
         </div>
       </div>
@@ -136,20 +141,20 @@ export default function PublicViewPage() {
   }
 
   return (
-    <div className="min-h-screen bg-cream">
-      {/* Header */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-sm border-b border-warm-200 shadow-sm">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-amber flex items-center justify-center">
-              <ClipboardList className="w-5 h-5 text-white" />
+    <div className="min-h-screen bg-background pb-56">
+      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-border py-8 px-8">
+        <div className="max-w-4xl mx-auto flex items-center justify-between gap-6">
+          <div className="flex items-center gap-4">
+            <div className="w-10 h-10 rounded-xl bg-charcoal flex items-center justify-center">
+              <ClipboardList className="w-6 h-6 text-white" />
             </div>
-            <span className="font-bold text-charcoal">ListTogether</span>
-            <span className="px-2 py-0.5 rounded-full bg-warm-100 text-warm-600 text-[10px] font-medium">
-              View-Only
-            </span>
+            <div className="space-y-0.5">
+              <h1 className="text-xl font-display font-extrabold tracking-tight text-charcoal">{list.name}</h1>
+              <span className="inline-flex px-2 py-0.5 rounded bg-warm-100 text-warm-400 text-[9px] font-black uppercase tracking-widest">View Only</span>
+            </div>
           </div>
-          <div className="flex bg-warm-100 rounded-lg p-0.5">
+          
+          <div className="flex bg-warm-50 border border-warm-100 rounded-2xl p-1.5">
             {([
               { mode: 'compact' as LayoutMode, icon: LayoutGrid },
               { mode: 'standard' as LayoutMode, icon: LayoutList },
@@ -158,8 +163,8 @@ export default function PublicViewPage() {
               <button
                 key={mode}
                 onClick={() => setLayoutMode(mode)}
-                className={`p-1.5 rounded-md transition-all ${
-                  layoutMode === mode ? 'bg-amber text-white shadow-sm' : 'text-warm-400 hover:text-charcoal'
+                className={`p-2.5 rounded-xl transition-all duration-300 ${
+                  layoutMode === mode ? 'bg-white text-amber shadow-md' : 'text-warm-400 hover:text-charcoal'
                 }`}
               >
                 <Icon className="w-4 h-4" />
@@ -169,93 +174,81 @@ export default function PublicViewPage() {
         </div>
       </header>
 
-      <div className="max-w-2xl mx-auto px-4 py-4">
-        <div className="mb-4">
-          <h1 className="text-xl font-bold text-charcoal">{list.name}</h1>
-          <p className="text-xs text-warm-400">
-            Shared by {list.owner?.full_name || list.owner?.email || 'someone'}
+      <div className="max-w-4xl mx-auto px-8 py-16">
+        <div className="mb-12 space-y-1">
+          <p className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-amber">Authorized Househould</p>
+          <p className="text-sm font-semibold text-warm-400">
+            Established by {list.owner?.full_name || list.owner?.email || 'Authorized User'}
           </p>
         </div>
 
         {items.length === 0 ? (
-          <div className="text-center py-16">
-            <p className="text-warm-600">This list is empty.</p>
+          <div className="text-center py-32 space-y-4">
+            <p className="text-lg text-warm-400">Empty list</p>
           </div>
         ) : (
-          <div className="space-y-4 pb-20">
+          <div className="space-y-16">
             {Object.entries(groupedItems).map(([category, catItems]) => (
-              <div key={category}>
+              <div key={category} className="space-y-8">
                 <button
                   onClick={() => toggleCategory(category)}
-                  className="category-header w-full flex items-center justify-between mb-2"
+                  className="category-header w-full flex items-center justify-between mb-2 group cursor-pointer"
                 >
-                  <span>{category} ({catItems.length})</span>
+                  <div className="flex items-center gap-4">
+                    <div className="w-1.5 h-1.5 rounded-full bg-amber" />
+                    <span className="font-display tracking-[0.2em]">{category}</span>
+                    <span className="text-warm-300 font-bold ml-2">[{catItems.length}]</span>
+                  </div>
+                  <ChevronLeft className={`w-5 h-5 text-warm-300 transition-transform duration-500 ${collapsedCategories.has(category) ? '-rotate-90' : ''}`} />
                 </button>
+
                 {!collapsedCategories.has(category) && (
-                  <div className={layoutMode === 'visual' ? 'grid grid-cols-1 sm:grid-cols-2 gap-2' : 'space-y-2'}>
+                  <div className={layoutMode === 'visual' ? 'grid grid-cols-1 sm:grid-cols-2 gap-6' : 'space-y-4'}>
                     {catItems.map(item => (
                       <div
                         key={item.id}
-                        onTouchStart={(e) => {
-                          const touch = e.touches[0];
-                          (e.currentTarget as any)._touchX = touch.clientX;
-                        }}
-                        onTouchMove={(e) => {
-                          const touch = e.touches[0];
-                          const startX = (e.currentTarget as any)._touchX || 0;
-                          const moveDiff = touch.clientX - startX;
-                          if (moveDiff > 50) {
-                            (e.currentTarget as HTMLElement).style.transform = `translateX(${Math.min(moveDiff, 100)}px)`;
-                            (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(245, 158, 11, 0.1)';
-                          }
-                        }}
-                        onTouchEnd={(e) => {
-                          (e.currentTarget as HTMLElement).style.transform = '';
-                          (e.currentTarget as HTMLElement).style.backgroundColor = '';
-                          (e.currentTarget as any)._touchX = 0;
-                        }}
                         className={`
-                          transition-transform duration-200
-                          ${layoutMode === 'compact' ? 'flex items-center gap-3 py-2 px-1 border-b border-warm-100' : ''}
-                          ${layoutMode === 'standard' ? 'card-surface p-3 flex items-center gap-3' : ''}
-                          ${layoutMode === 'visual' ? 'card-surface p-4 flex flex-col gap-2' : ''}
-                          ${item.is_checked ? 'opacity-50' : ''}
+                          transition-all duration-500
+                          ${layoutMode === 'compact' ? 'flex items-center gap-6 py-4 px-4 border-b border-black/5' : 'card-premium p-8 flex items-center gap-8'}
+                          ${item.is_checked ? 'opacity-30 grayscale' : ''}
                         `}
                       >
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-6">
                           <div className={`
-                            shrink-0 rounded-lg border-2 flex items-center justify-center
-                            ${layoutMode === 'compact' ? 'w-5 h-5' : layoutMode === 'visual' ? 'w-7 h-7' : 'w-6 h-6'}
+                            shrink-0 rounded-[1rem] border-2 flex items-center justify-center transition-all duration-300
+                            ${layoutMode === 'compact' ? 'w-8 h-8' : 'w-10 h-10'}
                             ${item.is_checked ? 'bg-amber border-amber' : 'border-warm-200'}
                           `}>
-                            {item.is_checked && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
+                            {item.is_checked && <Check className="w-5 h-5 text-white" strokeWidth={5} />}
                           </div>
 
                           {layoutMode === 'visual' && !item.is_checked && (
-                            <div className="w-8 h-8 rounded-lg bg-amber-pale flex items-center justify-center">
+                            <div className="w-16 h-16 rounded-2xl bg-amber/5 flex items-center justify-center shrink-0">
                               {(() => {
                                 const Icon = CATEGORY_ICONS[item.category || 'Other'] || CATEGORY_ICONS.Other;
-                                return <Icon className="w-4 h-4 text-amber" />;
+                                return <Icon className="w-8 h-8 text-amber" />;
                               })()}
                             </div>
                           )}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <span className={`font-medium ${item.is_checked ? 'line-through text-warm-400' : 'text-charcoal'} ${layoutMode === 'compact' ? 'text-sm' : ''}`}>
+
+                        <div className="flex-1 min-w-0 space-y-1">
+                          <h4 className={`font-display font-extrabold text-charcoal tracking-tight ${item.is_checked ? 'line-through text-warm-400' : ''} ${layoutMode === 'compact' ? 'text-lg' : 'text-xl'}`}>
                             {item.name}
-                          </span>
+                          </h4>
                           {item.notes && layoutMode !== 'compact' && (
-                            <p className="text-xs text-warm-400 mt-0.5">{item.notes}</p>
+                            <p className="text-sm font-medium text-warm-400 truncate">{item.notes}</p>
                           )}
                         </div>
-                        <div className="flex items-center gap-2 shrink-0">
+
+                        <div className="flex items-center gap-6 shrink-0">
                           {item.quantity > 1 && (
-                            <span className={`px-2 py-0.5 rounded-full bg-warm-100 text-warm-600 font-medium ${layoutMode === 'compact' ? 'text-[10px]' : 'text-xs'}`}>
+                            <span className="px-4 py-1.5 rounded-full bg-warm-100 text-warm-600 text-[10px] font-bold uppercase tracking-widest">
                               {item.quantity}{item.unit ? ` ${item.unit}` : ''}
                             </span>
                           )}
                           {item.estimated_price_cents && (
-                            <span className={`font-semibold text-amber ${layoutMode === 'compact' ? 'text-xs' : 'text-sm'}`}>
+                            <span className="font-display font-black text-2xl text-amber tracking-tighter">
                               {formatPrice(item.estimated_price_cents)}
                             </span>
                           )}
@@ -270,34 +263,34 @@ export default function PublicViewPage() {
         )}
       </div>
 
-      {/* Running Total + CTA */}
-      <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-warm-200 z-50">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
-          <div>
-            <span className="text-xs text-warm-600">Est. Total: </span>
-            <span className="text-lg font-bold text-amber">${(runningTotal / 100).toFixed(2)}</span>
+      {/* Floating Join/CTA Bar */}
+      <div className="fixed bottom-12 left-0 right-0 z-50 px-8 pointer-events-none">
+        <div className="max-w-4xl mx-auto glass-panel rounded-[3rem] p-6 flex items-center justify-between pointer-events-auto shadow-[0_32px_80px_rgba(17,24,39,0.15)] border-white/40">
+          <div className="flex items-baseline gap-4 ml-4">
+            <span className="text-[11px] font-extrabold uppercase tracking-[0.2em] text-warm-300 italic">Total Value</span>
+            <span className="text-4xl font-display font-black text-charcoal tracking-tighter leading-none">${(runningTotal / 100).toFixed(2)}</span>
           </div>
           {isAuthenticated ? (
             <button
               onClick={handleJoin}
               disabled={joining}
-              className="btn-primary text-sm py-2 px-6 flex items-center gap-2"
+              className="btn-primary py-5 px-12 flex items-center gap-3"
             >
               {joining ? (
-                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <div className="w-5 h-5 border-3 border-white border-t-transparent rounded-full animate-spin" />
               ) : (
                 <>
-                  <Users className="w-4 h-4" />
-                  Join & Edit
+                  <Users className="w-5 h-5" />
+                  Join & Edit Household
                 </>
               )}
             </button>
           ) : (
             <button
               onClick={() => navigate('/signup')}
-              className="btn-primary text-sm py-2 px-4"
+              className="btn-primary py-5 px-12"
             >
-              Create Free Account
+              Initialize My Household
             </button>
           )}
         </div>

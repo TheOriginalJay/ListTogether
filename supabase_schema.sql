@@ -83,10 +83,13 @@ create policy "Users can manage items in their lists" on items for all using (
     exists (select 1 from list_collaborators where list_id = items.list_id and user_id = auth.uid())))
 );
 
--- Collaborators: Owner + Collaborators can view
+-- Collaborators: Owner can manage, Users can view their own, and Users can JOIN
 create policy "Users can view collaborators for their lists" on list_collaborators for select using (
   exists (select 1 from lists where id = list_collaborators.list_id and owner_id = auth.uid()) or
   user_id = auth.uid()
+);
+create policy "Users can join a list via invite" on list_collaborators for insert with check (
+  auth.uid() = user_id
 );
 create policy "Owners can manage collaborators" on list_collaborators for all using (
   exists (select 1 from lists where id = list_collaborators.list_id and owner_id = auth.uid())
@@ -100,3 +103,24 @@ create policy "Anyone can view items in shared lists" on items for select using 
 create policy "Anyone can view profiles of shared list owners" on users for select using (
   exists (select 1 from lists where owner_id = users.id and privacy = 'link_sharing')
 );
+
+-- 8. Automation: Create user profile on signup
+create or replace function public.handle_new_user()
+returns trigger as $$
+begin
+  insert into public.users (id, email, full_name, avatar_url, subscription_status, trial_ends_at)
+  values (
+    new.id,
+    new.email,
+    new.raw_user_meta_data->>'full_name',
+    new.raw_user_meta_data->>'avatar_url',
+    'trialing',
+    now() + interval '5 days'
+  );
+  return new;
+end;
+$$ language plpgsql security definer;
+
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute procedure public.handle_new_user();

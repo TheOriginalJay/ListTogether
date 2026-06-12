@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router';
-import { Plus, ClipboardList, ChevronRight, Lock, Users, Link2, X } from 'lucide-react';
+import { ClipboardList, ChevronRight, Lock, Users, Link2, X } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { getUserLists, createList, joinListByCode } from '@/lib/supabase';
@@ -93,6 +93,8 @@ export default function DashboardPage() {
       showToast('Joined list successfully!', 'success');
       setShowJoin(false);
       setInviteCode('');
+      // Force refresh lists to ensure it persists
+      await fetchLists();
       navigate(`/list/${listId}`);
     } catch (err: any) {
       showToast(err.message || 'Invalid invite code', 'error');
@@ -101,63 +103,69 @@ export default function DashboardPage() {
     }
   };
 
-  // const expired = subscriptionStatus === 'canceled' || (subscriptionStatus === 'trialing' && trialDaysLeft <= 0);
-
   return (
     <div className="min-h-screen bg-background">
-      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-border px-6 py-6">
-        <div className="max-w-3xl mx-auto flex items-center justify-between gap-4">
-          <h1 className="text-3xl font-display font-extrabold text-charcoal tracking-tight">My Lists</h1>
-          <div className="flex items-center gap-3">
+      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-border py-10 px-8">
+        <div className="max-w-4xl mx-auto flex items-end justify-between gap-6">
+          <div className="space-y-1">
+            <h1 className="text-4xl font-display font-extrabold text-charcoal tracking-tight">My Lists</h1>
+            <p className="text-sm font-medium text-warm-400">Manage your household rhythm</p>
+          </div>
+          <div className="flex items-center gap-4">
             <button
               onClick={() => setShowJoin(true)}
-              className="btn-secondary flex items-center gap-2 text-xs py-3 px-6"
+              className="btn-secondary py-3 px-8 text-sm"
             >
-              <Users className="w-4 h-4" />
-              <span className="hidden sm:inline">Join List</span>
+              Join
             </button>
             <button
               onClick={() => setShowCreate(true)}
-              className="btn-primary flex items-center gap-2 text-xs py-3 px-6"
+              className="btn-primary py-3 px-8 text-sm"
             >
-              <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline">Create New</span>
+              Create New
             </button>
           </div>
         </div>
       </header>
 
-      <div className="max-w-3xl mx-auto px-6 py-10 space-y-8">
+      <div className="max-w-4xl mx-auto px-8 py-16 space-y-12">
         {subscriptionStatus === 'trialing' && trialDaysLeft > 0 && (
-          <div className="bg-amber/5 border border-amber/20 rounded-2xl px-6 py-4 flex items-center justify-between">
-            <p className="text-sm font-semibold text-amber tracking-tight">
-              Trial ends in {trialDaysLeft} day{trialDaysLeft !== 1 ? 's' : ''}
-            </p>
-            <button className="text-xs font-bold uppercase tracking-widest text-amber hover:underline">Upgrade</button>
+          <div className="bg-amber/5 border border-amber/10 rounded-3xl p-8 flex items-center justify-between">
+            <div className="space-y-1">
+              <p className="text-lg font-bold text-amber tracking-tight">
+                Premium trial is active
+              </p>
+              <p className="text-sm font-medium text-amber/60">
+                {trialDaysLeft} day{trialDaysLeft !== 1 ? 's' : ''} remaining
+              </p>
+            </div>
+            <button className="px-6 py-2.5 rounded-xl bg-amber text-white text-xs font-bold uppercase tracking-widest hover:scale-105 transition-transform">Upgrade</button>
           </div>
         )}
 
         {loading ? (
-          <div className="space-y-4">
+          <div className="grid gap-6">
             {[1, 2, 3].map(i => (
-              <div key={i} className="h-24 rounded-2xl bg-warm-100 animate-pulse" />
+              <div key={i} className="h-32 rounded-3xl bg-warm-50 animate-pulse" />
             ))}
           </div>
         ) : lists.length === 0 ? (
-          <div className="text-center py-24">
-            <div className="w-24 h-24 rounded-3xl bg-warm-100 flex items-center justify-center mx-auto mb-8">
-              <ClipboardList className="w-12 h-12 text-warm-300" />
+          <div className="text-center py-32 space-y-8">
+            <div className="w-32 h-32 rounded-[2.5rem] bg-warm-50 flex items-center justify-center mx-auto shadow-inner">
+              <ClipboardList className="w-16 h-16 text-warm-200" />
             </div>
-            <h3 className="text-2xl font-display font-bold text-charcoal mb-2">Start your first list</h3>
-            <p className="text-sm text-warm-500 mb-8 max-w-xs mx-auto leading-relaxed">
-              Organize your household shopping with real-time sync and offline support.
-            </p>
+            <div className="space-y-2">
+              <h3 className="text-3xl font-display font-extrabold text-charcoal tracking-tight">Start your first list</h3>
+              <p className="text-lg text-warm-400 max-w-sm mx-auto leading-relaxed">
+                The perfect shopping rhythm begins with a single list.
+              </p>
+            </div>
             <button onClick={() => setShowCreate(true)} className="btn-primary">
-              Create List
+              Create My First List
             </button>
           </div>
         ) : (
-          <div className="grid gap-4">
+          <div className="grid gap-6">
             {lists.map(list => {
               const privacy = PRIVACY_CONFIGS[list.privacy as PrivacySetting] || PRIVACY_CONFIGS.private;
               const PrivacyIcon = privacy.icon;
@@ -167,24 +175,28 @@ export default function DashboardPage() {
                 <button
                   key={list.id}
                   onClick={() => navigate(`/list/${list.id}`)}
-                  className="list-card group w-full card-premium p-6 flex items-center gap-6 text-left"
+                  className="list-card group w-full card-premium p-8 flex items-center gap-8 text-left"
                 >
-                  <div className="w-14 h-14 rounded-2xl bg-warm-50 flex items-center justify-center shrink-0 group-hover:bg-amber/5 transition-colors duration-500">
-                    <ClipboardList className="w-7 h-7 text-charcoal group-hover:text-amber transition-colors duration-500" />
+                  <div className="w-16 h-16 rounded-[1.25rem] bg-warm-50 flex items-center justify-center shrink-0 group-hover:bg-amber/5 group-hover:scale-110 transition-all duration-500">
+                    <ClipboardList className="w-8 h-8 text-charcoal group-hover:text-amber transition-all duration-500" />
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-3 mb-1">
-                      <h3 className="text-xl font-display font-bold text-charcoal truncate">{list.name}</h3>
-                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${privacy.color}`}>
-                        <PrivacyIcon className="w-3 h-3" />
+                  <div className="flex-1 min-w-0 space-y-1.5">
+                    <div className="flex items-center gap-4">
+                      <h3 className="text-2xl font-display font-extrabold text-charcoal truncate tracking-tight">{list.name}</h3>
+                      <span className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-widest ${privacy.color}`}>
+                        <PrivacyIcon className="w-3.5 h-3.5" />
                         {privacy.label}
                       </span>
                     </div>
-                    <p className="text-xs font-medium text-warm-400">
-                      {itemCount} {itemCount === 1 ? 'item' : 'items'} • Updated {formatDistanceToNow(new Date(list.updated_at), { addSuffix: true })}
+                    <p className="text-sm font-semibold text-warm-400 flex items-center gap-2">
+                      <span className="text-amber">{itemCount} {itemCount === 1 ? 'item' : 'items'}</span>
+                      <span className="w-1 h-1 rounded-full bg-warm-200" />
+                      <span>Updated {formatDistanceToNow(new Date(list.updated_at), { addSuffix: true })}</span>
                     </p>
                   </div>
-                  <ChevronRight className="w-6 h-6 text-warm-200 group-hover:text-amber group-hover:translate-x-1 transition-all duration-500 shrink-0" />
+                  <div className="w-12 h-12 rounded-full border border-warm-100 flex items-center justify-center group-hover:border-amber group-hover:bg-amber group-hover:text-white transition-all duration-500">
+                    <ChevronRight className="w-6 h-6 group-hover:translate-x-0.5 transition-transform" />
+                  </div>
                 </button>
               );
             })}
@@ -192,35 +204,42 @@ export default function DashboardPage() {
         )}
       </div>
 
-      {/* Modals */}
+      {/* Modals - Glassmorphism refine */}
       {(showCreate || showJoin) && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-6 bg-charcoal/20 backdrop-blur-sm">
-          <div className="glass-panel rounded-[2rem] p-10 w-full max-w-lg relative">
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-8 bg-charcoal/30 backdrop-blur-md">
+          <div className="glass-panel rounded-[3rem] p-12 w-full max-w-xl relative overflow-hidden">
+            {/* Ambient decorative element */}
+            <div className="absolute -top-24 -right-24 w-64 h-64 bg-amber/5 rounded-full blur-3xl pointer-events-none" />
+
             <button 
               onClick={() => { setShowCreate(false); setShowJoin(false); }} 
-              className="absolute top-6 right-6 w-10 h-10 rounded-full flex items-center justify-center hover:bg-warm-100 transition-colors"
+              className="absolute top-8 right-8 w-12 h-12 rounded-full flex items-center justify-center hover:bg-warm-100 transition-colors z-10"
             >
-              <X className="w-5 h-5 text-warm-400" />
+              <X className="w-6 h-6 text-warm-400" />
             </button>
 
             {showCreate && (
-              <>
-                <h2 className="text-3xl font-display font-extrabold text-charcoal mb-8 tracking-tight">Create List</h2>
-                <form onSubmit={handleCreateList} className="space-y-8">
-                  <div className="space-y-2">
-                    <label className="text-[11px] font-bold uppercase tracking-widest text-warm-500 ml-1">List Name</label>
+              <div className="relative z-10 space-y-10">
+                <div className="space-y-2">
+                  <h2 className="text-4xl font-display font-extrabold text-charcoal tracking-tight">New List</h2>
+                  <p className="text-sm font-medium text-warm-400">Give your rhythm a name</p>
+                </div>
+                
+                <form onSubmit={handleCreateList} className="space-y-10">
+                  <div className="space-y-3">
+                    <label className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-warm-500 ml-1">Title</label>
                     <input
                       type="text"
-                      placeholder="e.g., Weekly Staples"
+                      placeholder="e.g., Weekly Essentials"
                       value={newListName}
                       onChange={e => setNewListName(e.target.value)}
-                      className="w-full input-field"
+                      className="w-full input-field text-xl"
                       autoFocus
                     />
                   </div>
 
                   <div className="space-y-4">
-                    <label className="text-[11px] font-bold uppercase tracking-widest text-warm-500 ml-1">Privacy</label>
+                    <label className="text-[10px] font-extrabold uppercase tracking-[0.2em] text-warm-500 ml-1">Privacy Level</label>
                     <div className="grid gap-3">
                       {(['private', 'invite_only', 'link_sharing'] as const).map(value => {
                         const config = PRIVACY_CONFIGS[value];
@@ -231,56 +250,57 @@ export default function DashboardPage() {
                             key={value}
                             type="button"
                             onClick={() => setNewListPrivacy(value)}
-                            className={`w-full flex items-center gap-4 p-4 rounded-2xl border transition-all duration-300 ${
-                              isSelected ? 'bg-white border-amber shadow-lg shadow-amber/5' : 'bg-transparent border-black/5 hover:border-black/10'
+                            className={`w-full flex items-center gap-5 p-5 rounded-2xl border transition-all duration-300 ${
+                              isSelected ? 'bg-white border-amber shadow-2xl shadow-amber/5' : 'bg-transparent border-black/5 hover:border-black/10'
                             }`}
                           >
-                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${isSelected ? 'bg-amber text-white' : 'bg-warm-100 text-warm-400'}`}>
-                              <Icon className="w-5 h-5" />
+                            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${isSelected ? 'bg-amber text-white' : 'bg-warm-100 text-warm-400'}`}>
+                              <Icon className="w-6 h-6" />
                             </div>
-                            <div className="text-left">
-                              <p className="text-sm font-bold text-charcoal capitalize">{value.replace('_', ' ')}</p>
-                              <p className="text-[11px] text-warm-400 font-medium">
-                                {value === 'private' ? 'Visible only to you' : value === 'invite_only' ? 'Invite-only access' : 'Anyone with link'}
+                            <div className="text-left space-y-0.5">
+                              <p className="text-base font-bold text-charcoal capitalize">{value.replace('_', ' ')}</p>
+                              <p className="text-xs text-warm-400 font-medium">
+                                {value === 'private' ? 'Visible only to you' : value === 'invite_only' ? 'Authorized household only' : 'Public viewable link'}
                               </p>
                             </div>
-                            {isSelected && <div className="ml-auto w-2 h-2 rounded-full bg-amber" />}
+                            {isSelected && <div className="ml-auto w-2.5 h-2.5 rounded-full bg-amber" />}
                           </button>
                         );
                       })}
                     </div>
                   </div>
 
-                  <div className="flex gap-4 pt-4">
-                    <button type="submit" disabled={!newListName.trim() || creating} className="flex-1 btn-primary">
-                      {creating ? 'Creating...' : 'Create List'}
-                    </button>
-                  </div>
+                  <button type="submit" disabled={!newListName.trim() || creating} className="w-full btn-primary py-5">
+                    {creating ? 'Creating...' : 'Establish List'}
+                  </button>
                 </form>
-              </>
+              </div>
             )}
 
             {showJoin && (
-              <>
-                <h2 className="text-3xl font-display font-extrabold text-charcoal mb-8 tracking-tight">Join List</h2>
-                <form onSubmit={handleJoinList} className="space-y-8">
-                  <div className="space-y-2">
-                    <label className="text-[11px] font-bold uppercase tracking-widest text-warm-500 ml-1">Invite Code</label>
+              <div className="relative z-10 space-y-10">
+                <div className="space-y-2 text-center">
+                  <h2 className="text-4xl font-display font-extrabold text-charcoal tracking-tight">Join List</h2>
+                  <p className="text-sm font-medium text-warm-400">Enter the authorized code</p>
+                </div>
+                
+                <form onSubmit={handleJoinList} className="space-y-10">
+                  <div className="space-y-4">
                     <input
                       type="text"
-                      placeholder="ABC 123"
+                      placeholder="••••••"
                       maxLength={6}
                       value={inviteCode}
                       onChange={e => setInviteCode(e.target.value.toUpperCase())}
-                      className="w-full input-field text-center text-3xl font-bold tracking-[0.2em] uppercase"
+                      className="w-full bg-warm-50/50 rounded-3xl border-2 border-dashed border-warm-200 p-8 text-center text-5xl font-display font-extrabold tracking-[0.4em] uppercase text-charcoal focus:border-amber focus:bg-white focus:outline-none transition-all"
                       autoFocus
                     />
                   </div>
-                  <button type="submit" disabled={inviteCode.length !== 6 || joining} className="w-full btn-primary">
-                    {joining ? 'Joining...' : 'Join & Sync'}
+                  <button type="submit" disabled={inviteCode.length !== 6 || joining} className="w-full btn-primary py-5">
+                    {joining ? 'Syncing...' : 'Join Household'}
                   </button>
                 </form>
-              </>
+              </div>
             )}
           </div>
         </div>

@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router';
 import {
   ChevronLeft, LayoutGrid, LayoutList, Columns3, Share2,
   GripVertical, Check, Plus, X, Trash2, Edit3,
-  AlertTriangle, ClipboardList, Settings,
+  AlertTriangle, ClipboardList, Settings, ArrowRight,
   Apple, Droplets, Beef, Croissant, Box, IceCream, Coffee, Bath, Cookie
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -369,16 +369,18 @@ export default function ListDetailPage() {
   if (!list) return null;
 
   return (
-    <div className="min-h-screen bg-background pb-56 sm:pb-40">
-      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-border py-6 px-6">
-        <div className="max-w-3xl mx-auto flex items-center justify-between">
-          <button onClick={() => navigate('/dashboard')} className="flex items-center gap-3 text-charcoal hover:text-amber transition-colors">
-            <ChevronLeft className="w-6 h-6" />
-            <h1 className="text-2xl font-display font-extrabold tracking-tight truncate max-w-[200px] sm:max-w-md">{list.name}</h1>
+    <div className="min-h-screen bg-background pb-80 sm:pb-64">
+      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-border py-8 px-8">
+        <div className="max-w-4xl mx-auto flex items-center justify-between gap-6">
+          <button onClick={() => navigate('/dashboard')} className="flex items-center gap-4 text-charcoal hover:text-amber transition-all group">
+            <div className="w-10 h-10 rounded-full border border-warm-100 flex items-center justify-center group-hover:border-amber group-hover:bg-amber group-hover:text-white transition-all">
+              <ChevronLeft className="w-6 h-6" />
+            </div>
+            <h1 className="text-3xl font-display font-extrabold tracking-tight truncate max-w-[180px] sm:max-w-md">{list.name}</h1>
           </button>
           
-          <div className="flex items-center gap-2">
-            <div className="flex bg-warm-100/50 rounded-xl p-1">
+          <div className="flex items-center gap-3">
+            <div className="flex bg-warm-50 border border-warm-100 rounded-2xl p-1.5">
               {([
                 { mode: 'compact' as LayoutMode, icon: LayoutGrid },
                 { mode: 'standard' as LayoutMode, icon: LayoutList },
@@ -387,19 +389,20 @@ export default function ListDetailPage() {
                 <button
                   key={mode}
                   onClick={() => setLayoutMode(mode)}
-                  className={`p-2 rounded-lg transition-all duration-300 ${
-                    layoutMode === mode ? 'bg-white text-amber shadow-sm' : 'text-warm-400 hover:text-charcoal'
+                  className={`p-2.5 rounded-xl transition-all duration-300 ${
+                    layoutMode === mode ? 'bg-white text-amber shadow-md' : 'text-warm-400 hover:text-charcoal'
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
+                  <Icon className="w-4.5 h-4.5" />
                 </button>
               ))}
             </div>
-            <button onClick={() => setShowSettings(true)} className="p-3 rounded-xl hover:bg-warm-100 text-warm-400 hover:text-charcoal transition-colors">
+            <button onClick={() => setShowSettings(true)} className="w-12 h-12 rounded-2xl border border-warm-100 flex items-center justify-center text-warm-400 hover:text-charcoal hover:border-warm-200 transition-all">
               <Settings className="w-5 h-5" />
             </button>
-            <button onClick={() => setShowShare(true)} className="p-3 rounded-xl hover:bg-warm-100 text-warm-400 hover:text-charcoal transition-colors">
-              <Share2 className="w-5 h-5" />
+            <button onClick={() => setShowShare(true)} className="btn-primary py-3 px-6 text-sm">
+              <Share2 className="w-4 h-4 mr-2" />
+              Share
             </button>
           </div>
         </div>
@@ -513,40 +516,44 @@ export default function ListDetailPage() {
         )}
       </div>
 
-      <div className="fixed bottom-0 left-0 right-0 z-50 p-6 sm:p-10 pointer-events-none">
-        <div className="max-w-3xl mx-auto glass-panel rounded-[2.5rem] p-4 sm:p-6 flex flex-col gap-4 pointer-events-auto shadow-2xl shadow-charcoal/10">
-          <div className="flex items-center gap-3">
-            <div className="flex-1 relative">
+      {/* Editorial Floating Input Bar */}
+      <div className="fixed bottom-12 left-0 right-0 z-50 px-8 pointer-events-none">
+        <div className="max-w-4xl mx-auto glass-panel rounded-[3rem] p-6 flex flex-col gap-6 pointer-events-auto shadow-[0_32px_80px_rgba(17,24,39,0.15)] border-white/40">
+          <div className="flex items-center gap-4">
+            <div className="flex-1 relative group">
+              <div className="absolute left-6 top-1/2 -translate-y-1/2 text-warm-300 group-focus-within:text-amber transition-colors">
+                <Plus className="w-6 h-6" />
+              </div>
               <input
                 ref={inputRef}
                 type="text"
                 value={inputText}
                 onChange={e => setInputText(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') handleAddItems(); }}
-                placeholder="3 honey crisp apples, whole milk..."
-                className="w-full bg-warm-50 border-none rounded-2xl px-6 py-5 text-lg font-medium placeholder:text-warm-300 focus:ring-0"
+                placeholder="Add to rhythm: 3 organic apples, sea salt..."
+                className="w-full bg-warm-50/50 border-none rounded-[1.75rem] pl-16 pr-8 py-6 text-xl font-bold placeholder:text-warm-200 focus:bg-white focus:ring-0 transition-all"
               />
-              {inputText && (
-                <button onClick={() => setInputText('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-warm-300 hover:text-charcoal">
-                  <X className="w-5 h-5" />
-                </button>
-              )}
             </div>
-            <button onClick={handleAddItems} disabled={!inputText.trim()} className="w-16 h-16 rounded-2xl bg-charcoal text-white flex items-center justify-center hover:scale-105 active:scale-95 transition-all">
-              <Plus className="w-7 h-7" />
+            <button onClick={handleAddItems} disabled={!inputText.trim()} className="w-20 h-20 rounded-[2rem] bg-charcoal text-white flex items-center justify-center hover:scale-105 active:scale-95 transition-all shadow-xl shadow-charcoal/20">
+              <ArrowRight className="w-8 h-8" />
             </button>
           </div>
           
-          <div className="flex items-center justify-between px-2">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-amber animate-pulse" />
+          <div className="flex items-center justify-between px-6 pb-2">
+            <div className="flex items-center gap-4">
+              <div className="h-2 w-48 bg-warm-100 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-amber transition-all duration-1000 ease-expo" 
+                  style={{ width: `${(items.filter(i => i.is_checked).length / (items.length || 1)) * 100}%` }}
+                />
+              </div>
               <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-warm-400">
                 {items.filter(i => i.is_checked).length} of {items.length} secured
               </span>
             </div>
-            <div className="flex items-baseline gap-2">
-              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-warm-400 italic">Estimated Total</span>
-              <span className="text-3xl font-display font-extrabold text-charcoal tracking-tighter">${(runningTotal / 100).toFixed(2)}</span>
+            <div className="flex items-baseline gap-4">
+              <span className="text-[11px] font-extrabold uppercase tracking-[0.2em] text-warm-300 italic">Estimated Total</span>
+              <span className="text-4xl font-display font-black text-charcoal tracking-tighter leading-none">${(runningTotal / 100).toFixed(2)}</span>
             </div>
           </div>
         </div>
