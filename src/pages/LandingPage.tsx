@@ -28,25 +28,25 @@ export default function LandingPage() {
   }, [isAuthenticated, navigate]);
 
   useEffect(() => {
-    // Cinematic Entrance
+    // Cinematic Entrance - Snappy
     const ctx = gsap.context(() => {
       gsap.from('.hero-content > *', {
-        y: 40,
+        y: 20,
         opacity: 0,
-        duration: 1.2,
-        stagger: 0.2,
-        ease: 'expo.out',
+        duration: 0.6,
+        stagger: 0.1,
+        ease: 'power3.out',
       });
 
       gsap.from('.feature-card', {
         scrollTrigger: {
           trigger: featuresRef.current,
-          start: 'top 80%',
+          start: 'top 90%',
         },
-        y: 60,
+        y: 30,
         opacity: 0,
-        duration: 1,
-        stagger: 0.15,
+        duration: 0.5,
+        stagger: 0.08,
         ease: 'power3.out',
       });
     });

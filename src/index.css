@@ -47,7 +47,6 @@
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    cursor: none; /* For custom cursor */
   }
 
   h1, h2, h3, h4, .font-display {
@@ -74,9 +73,9 @@
   
   .card-premium {
     @apply bg-white rounded-2xl border border-border 
-           shadow-[0_4px_16px_rgba(17,24,39,0.04)]
-           hover:shadow-[0_12px_40px_rgba(17,24,39,0.08)] hover:-translate-y-1
-           transition-all duration-500;
+           shadow-[0_2px_8px_rgba(17,24,39,0.04)]
+           hover:shadow-[0_8px_24px_rgba(17,24,39,0.08)] hover:-translate-y-0.5
+           transition-all duration-200;
   }
 
   .glass-panel {

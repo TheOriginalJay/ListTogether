@@ -97,11 +97,11 @@ export default function ListDetailPage() {
   useEffect(() => {
     if (!loading) {
       gsap.from('.category-section', {
-        y: 20,
+        y: 10,
         opacity: 0,
-        duration: 0.8,
-        stagger: 0.1,
-        ease: 'power3.out',
+        duration: 0.4,
+        stagger: 0.05,
+        ease: 'power2.out',
       });
     }
   }, [loading]);

@@ -2,7 +2,6 @@ import { Routes, Route, Navigate } from 'react-router';
 import { AuthProvider } from '@/contexts/AuthContext';
 import { ToastProvider } from '@/contexts/ToastContext';
 import { SmoothScroll } from '@/components/SmoothScroll';
-import { CustomCursor } from '@/components/CustomCursor';
 import { AppShell } from '@/components/AppShell';
 import LandingPage from '@/pages/LandingPage';
 import LoginPage from '@/pages/LoginPage';
@@ -64,7 +63,6 @@ export default function App() {
     <AuthProvider>
       <ToastProvider>
         <SmoothScroll>
-          <CustomCursor />
           <AppRoutes />
         </SmoothScroll>
       </ToastProvider>

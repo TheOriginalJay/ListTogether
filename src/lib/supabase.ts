@@ -54,25 +54,17 @@ export async function getUserLists(): Promise<ShoppingList[]> {
   if (ownedError) console.error('Error fetching owned lists:', ownedError);
 
   // Fetch lists where the user is a collaborator
-  const { data: collabEntries, error: collabError } = await supabase
+  // We join with the lists table to get the full list data in one go
+  const { data: collabData, error: collabError } = await supabase
     .from('list_collaborators')
-    .select('list_id')
+    .select('list_id, list:lists(*, items(count))')
     .eq('user_id', user.id);
 
   if (collabError) console.error('Error fetching collaborator entries:', collabError);
 
-  const collabListIds = (collabEntries || []).map(c => c.list_id);
-  
-  let collaboratedLists: any[] = [];
-  if (collabListIds.length > 0) {
-    const { data: fetchedCollab, error: fetchError } = await supabase
-      .from('lists')
-      .select('*, items(count)')
-      .in('id', collabListIds);
-    
-    if (fetchError) console.error('Error fetching collaborated lists:', fetchError);
-    else collaboratedLists = fetchedCollab || [];
-  }
+  const collaboratedLists = (collabData || [])
+    .map(c => c.list)
+    .filter(Boolean);
 
   const allLists = [...(ownedLists || []), ...collaboratedLists];
   
