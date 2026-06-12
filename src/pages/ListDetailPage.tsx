@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router';
 import {
   ChevronLeft, LayoutGrid, LayoutList, Columns3, Share2,
   GripVertical, Check, Plus, X, Trash2, Edit3,
-  AlertTriangle, ClipboardList, Settings, Lock, Users, Link2,
+  AlertTriangle, ClipboardList, Settings,
   Apple, Droplets, Beef, Croissant, Box, IceCream, Coffee, Bath, Cookie
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
@@ -699,9 +699,6 @@ function EditItemForm({ item, onSave, onDelete, onClose }: {
       </div>
     </form>
   );
-}
-
-
 }
 
 
