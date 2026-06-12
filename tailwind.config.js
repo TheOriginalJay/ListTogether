@@ -39,17 +39,17 @@ module.exports = {
           foreground: "hsl(var(--card-foreground))",
         },
         amber: {
-          DEFAULT: '#F59E0B',
+          DEFAULT: '#D97706',
           light: '#FBBF24',
           pale: '#FEF3C7',
         },
-        charcoal: '#1F2937',
-        cream: '#FFFBEB',
+        charcoal: '#111827',
+        cream: '#FDFBF7',
         warm: {
           100: '#F3F4F6',
-          200: '#E5E7EB',
-          400: '#9CA3AF',
-          600: '#4B5563',
+          200: '#D1D5DB',
+          400: '#6B7280',
+          600: '#374151',
         },
         brand: {
           green: '#4CAF50',

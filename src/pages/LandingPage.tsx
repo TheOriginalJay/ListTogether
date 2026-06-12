@@ -58,7 +58,7 @@ export default function LandingPage() {
     scene.add(galleryGroup);
 
     // Placeholder colored planes instead of textures
-    const colors = ['#F59E0B', '#FBBF24', '#FEF3C7', '#1F2937', '#4B5563'];
+    const colors = ['#D97706', '#FBBF24', '#FEF3C7', '#111827', '#374151'];
     const initialConfigs = [
       { pos: [-1.2, 0, 0], rot: [0, -0.6, 0] },
       { pos: [1.2, 0, 0], rot: [0, 0.4, 0] },
@@ -196,21 +196,21 @@ export default function LandingPage() {
             <div className="w-10 h-10 rounded-xl bg-amber flex items-center justify-center">
               <ClipboardList className="w-6 h-6 text-white" />
             </div>
-            <span className="font-extrabold text-2xl text-white drop-shadow-lg">ListTogether</span>
+            <span className="font-extrabold text-2xl text-charcoal drop-shadow-sm">ListTogether</span>
           </div>
-          <h1 className="text-5xl sm:text-6xl font-extrabold text-white mb-4 drop-shadow-lg leading-tight">
+          <h1 className="text-5xl sm:text-6xl font-extrabold text-charcoal mb-4 drop-shadow-sm leading-tight">
             Shop together,<br />stay organized
           </h1>
-          <p className="text-lg text-white/90 mb-8 drop-shadow max-w-lg mx-auto">
+          <p className="text-lg text-warm-600 mb-8 max-w-lg mx-auto">
             The collaborative shopping list that keeps your household in sync — online or offline.
           </p>
           <button
             onClick={() => navigate('/signup')}
-            className="btn-primary text-lg py-4 px-8 shadow-[0_4px_16px_rgba(232,168,56,0.4)]"
+            className="btn-primary text-lg py-4 px-8 shadow-[0_4px_16px_rgba(217,119,6,0.4)]"
           >
             Start Free Trial
           </button>
-          <p className="text-sm text-white/70 mt-4 drop-shadow">
+          <p className="text-sm text-warm-400 mt-4">
             5-day free trial, then $4.99/month
           </p>
         </div>

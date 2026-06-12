@@ -45,31 +45,42 @@ export async function getUserLists(): Promise<ShoppingList[]> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
 
-  const { data: ownedLists } = await supabase
+  // Fetch lists owned by the user
+  const { data: ownedLists, error: ownedError } = await supabase
     .from('lists')
     .select('*, items(count)')
-    .eq('owner_id', user.id)
-    .order('updated_at', { ascending: false });
+    .eq('owner_id', user.id);
 
-  const { data: collabLists } = await supabase
+  if (ownedError) console.error('Error fetching owned lists:', ownedError);
+
+  // Fetch lists where the user is a collaborator
+  const { data: collabEntries, error: collabError } = await supabase
     .from('list_collaborators')
-    .select('list:lists(*)')
-    .eq('user_id', user.id)
-    .not('accepted_at', 'is', null);
+    .select('list_id')
+    .eq('user_id', user.id);
 
-  const owned = (ownedLists || []) as ShoppingList[];
-  const collaborated = ((collabLists || []) as any[])
-    .map(c => c.list)
-    .filter(Boolean) as ShoppingList[];
+  if (collabError) console.error('Error fetching collaborator entries:', collabError);
+
+  const collabListIds = (collabEntries || []).map(c => c.list_id);
   
-  const allLists = [...owned];
-  for (const list of collaborated) {
-    if (!allLists.find(l => l.id === list.id)) {
-      allLists.push(list);
-    }
+  let collaboratedLists: any[] = [];
+  if (collabListIds.length > 0) {
+    const { data: fetchedCollab, error: fetchError } = await supabase
+      .from('lists')
+      .select('*, items(count)')
+      .in('id', collabListIds);
+    
+    if (fetchError) console.error('Error fetching collaborated lists:', fetchError);
+    else collaboratedLists = fetchedCollab || [];
   }
 
-  return allLists;
+  const allLists = [...(ownedLists || []), ...collaboratedLists];
+  
+  // Deduplicate by ID and sort by updated_at
+  const uniqueLists = Array.from(new Map(allLists.map(l => [l.id, l])).values());
+  return uniqueLists.sort((a, b) => 
+    new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+  ) as ShoppingList[];
 }
 
 export async function createList(name: string, privacy: string): Promise<ShoppingList> {

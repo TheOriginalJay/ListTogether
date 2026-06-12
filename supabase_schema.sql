@@ -65,15 +65,31 @@ create policy "Users can view their own profile" on users for select using (auth
 create policy "Users can update their own profile" on users for update using (auth.uid() = id);
 create policy "Users can insert their own profile" on users for insert with check (auth.uid() = id);
 
-create policy "Users can view lists they own" on lists for select using (auth.uid() = owner_id);
+-- Lists: Owner + Collaborators can view
+create policy "Users can view lists they own or collaborate on" on lists for select using (
+  auth.uid() = owner_id or 
+  exists (select 1 from list_collaborators where list_id = lists.id and user_id = auth.uid())
+);
 create policy "Users can create lists" on lists for insert with check (auth.uid() = owner_id);
 create policy "Users can update lists they own" on lists for update using (auth.uid() = owner_id);
 
+-- Items: Owner + Collaborators can view and manage
 create policy "Users can view items in their lists" on items for select using (
-  exists (select 1 from lists where id = items.list_id and owner_id = auth.uid())
+  exists (select 1 from lists where id = items.list_id and (owner_id = auth.uid() or 
+    exists (select 1 from list_collaborators where list_id = items.list_id and user_id = auth.uid())))
 );
 create policy "Users can manage items in their lists" on items for all using (
-  exists (select 1 from lists where id = items.list_id and owner_id = auth.uid())
+  exists (select 1 from lists where id = items.list_id and (owner_id = auth.uid() or 
+    exists (select 1 from list_collaborators where list_id = items.list_id and user_id = auth.uid())))
+);
+
+-- Collaborators: Owner + Collaborators can view
+create policy "Users can view collaborators for their lists" on list_collaborators for select using (
+  exists (select 1 from lists where id = list_collaborators.list_id and owner_id = auth.uid()) or
+  user_id = auth.uid()
+);
+create policy "Owners can manage collaborators" on list_collaborators for all using (
+  exists (select 1 from lists where id = list_collaborators.list_id and owner_id = auth.uid())
 );
 
 -- 7. Link Sharing Policies (Public Access)
