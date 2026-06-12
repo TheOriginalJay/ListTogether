@@ -702,9 +702,3 @@ function EditItemForm({ item, onSave, onDelete, onClose }: {
 }
 
 
-div>
-    </form>
-  );
-}
-
-
