@@ -1,10 +1,26 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router';
-import { ClipboardList, LayoutGrid, LayoutList, Columns3, Check, Users } from 'lucide-react';
+import {
+  ClipboardList, LayoutGrid, LayoutList, Columns3, Check, Users,
+  Apple, Droplets, Beef, Croissant, Box, IceCream, Coffee, Bath, Cookie
+} from 'lucide-react';
 import { getListByShareToken, subscribeToList, joinListByCode } from '@/lib/supabase';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import type { ListItem, ShoppingList, LayoutMode } from '@/types';
+
+const CATEGORY_ICONS: Record<string, any> = {
+  Produce: Apple,
+  Dairy: Droplets,
+  Meat: Beef,
+  Bakery: Croissant,
+  Pantry: Box,
+  Frozen: IceCream,
+  Beverages: Coffee,
+  Household: Bath,
+  Snacks: Cookie,
+  Other: ClipboardList,
+};
 
 export default function PublicViewPage() {
   const { token } = useParams<{ token: string }>();
@@ -180,19 +196,52 @@ export default function PublicViewPage() {
                     {catItems.map(item => (
                       <div
                         key={item.id}
+                        onTouchStart={(e) => {
+                          const touch = e.touches[0];
+                          (e.currentTarget as any)._touchX = touch.clientX;
+                        }}
+                        onTouchMove={(e) => {
+                          const touch = e.touches[0];
+                          const startX = (e.currentTarget as any)._touchX || 0;
+                          const diff = touch.clientX - startX;
+                          if (diff > 50) {
+                            (e.currentTarget as HTMLElement).style.transform = `translateX(${Math.min(diff, 100)}px)`;
+                            (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(245, 158, 11, 0.1)';
+                          }
+                        }}
+                        onTouchEnd={(e) => {
+                          const touch = e.changedTouches[0];
+                          const startX = (e.currentTarget as any)._touchX || 0;
+                          const diff = touch.clientX - startX;
+                          (e.currentTarget as HTMLElement).style.transform = '';
+                          (e.currentTarget as HTMLElement).style.backgroundColor = '';
+                          (e.currentTarget as any)._touchX = 0;
+                        }}
                         className={`
+                          transition-transform duration-200
                           ${layoutMode === 'compact' ? 'flex items-center gap-3 py-2 px-1 border-b border-warm-100' : ''}
                           ${layoutMode === 'standard' ? 'card-surface p-3 flex items-center gap-3' : ''}
                           ${layoutMode === 'visual' ? 'card-surface p-4 flex flex-col gap-2' : ''}
                           ${item.is_checked ? 'opacity-50' : ''}
                         `}
                       >
-                        <div className={`
-                          shrink-0 rounded-lg border-2 flex items-center justify-center
-                          ${layoutMode === 'compact' ? 'w-5 h-5' : layoutMode === 'visual' ? 'w-7 h-7' : 'w-6 h-6'}
-                          ${item.is_checked ? 'bg-amber border-amber' : 'border-warm-200'}
-                        `}>
-                          {item.is_checked && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
+                        <div className="flex items-center gap-3">
+                          <div className={`
+                            shrink-0 rounded-lg border-2 flex items-center justify-center
+                            ${layoutMode === 'compact' ? 'w-5 h-5' : layoutMode === 'visual' ? 'w-7 h-7' : 'w-6 h-6'}
+                            ${item.is_checked ? 'bg-amber border-amber' : 'border-warm-200'}
+                          `}>
+                            {item.is_checked && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
+                          </div>
+
+                          {layoutMode === 'visual' && !item.is_checked && (
+                            <div className="w-8 h-8 rounded-lg bg-amber-pale flex items-center justify-center">
+                              {(() => {
+                                const Icon = CATEGORY_ICONS[item.category || 'Other'] || CATEGORY_ICONS.Other;
+                                return <Icon className="w-4 h-4 text-amber" />;
+                              })()}
+                            </div>
+                          )}
                         </div>
                         <div className="flex-1 min-w-0">
                           <span className={`font-medium ${item.is_checked ? 'line-through text-warm-400' : 'text-charcoal'} ${layoutMode === 'compact' ? 'text-sm' : ''}`}>

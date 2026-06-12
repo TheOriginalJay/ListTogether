@@ -58,7 +58,7 @@ export default function LandingPage() {
     scene.add(galleryGroup);
 
     // Placeholder colored planes instead of textures
-    const colors = ['#E8A838', '#F5D78B', '#D9D4CF', '#F0EBE5', '#A39E99'];
+    const colors = ['#F59E0B', '#FBBF24', '#FEF3C7', '#1F2937', '#4B5563'];
     const initialConfigs = [
       { pos: [-1.2, 0, 0], rot: [0, -0.6, 0] },
       { pos: [1.2, 0, 0], rot: [0, 0.4, 0] },

@@ -3,11 +3,14 @@ import { useParams, useNavigate } from 'react-router';
 import {
   ChevronLeft, LayoutGrid, LayoutList, Columns3, Share2,
   GripVertical, Check, Plus, X, Trash2, Edit3,
-  AlertTriangle, ClipboardList, Settings, Lock, Users, Link2
+  AlertTriangle, ClipboardList, Settings, Lock, Users, Link2,
+  Apple, Droplets, Beef, Croissant, Box, IceCream, Coffee, Bath, Cookie
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
-import { parseNaturalLanguage, findDuplicates, normalizeItemName } from '@/lib/parser';
+import {
+  parseNaturalLanguage, findDuplicates, normalizeItemName, deduplicateParsedItems
+} from '@/lib/parser';
 import {
   getListItems, updateItem, deleteItem, batchCreateItems,
   getListById, subscribeToList, updateList
@@ -17,6 +20,19 @@ import {
   addCachedItem, queueMutation, getOnlineStatus
 } from '@/lib/db';
 import type { ListItem, ShoppingList, LayoutMode, ParsedItem } from '@/types';
+
+const CATEGORY_ICONS: Record<string, any> = {
+  Produce: Apple,
+  Dairy: Droplets,
+  Meat: Beef,
+  Bakery: Croissant,
+  Pantry: Box,
+  Frozen: IceCream,
+  Beverages: Coffee,
+  Household: Bath,
+  Snacks: Cookie,
+  Other: ClipboardList,
+};
 
 export default function ListDetailPage() {
   const { listId } = useParams<{ listId: string }>();
@@ -34,6 +50,7 @@ export default function ListDetailPage() {
   const [showEditItem, setShowEditItem] = useState<ListItem | null>(null);
   const [showDuplicate, setShowDuplicate] = useState<ParsedItem | null>(null);
   const [duplicateMatch, setDuplicateMatch] = useState<ListItem | null>(null);
+  const [duplicateQueue, setDuplicateQueue] = useState<ParsedItem[]>([]);
   const [checkedBehavior] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
@@ -155,7 +172,7 @@ export default function ListDetailPage() {
   // Handle natural language input
   const handleAddItems = async () => {
     if (!inputText.trim() || !listId) return;
-    const parsed = parseNaturalLanguage(inputText);
+    const parsed = deduplicateParsedItems(parseNaturalLanguage(inputText));
     if (parsed.length === 0) {
       showToast('Could not parse. Try: "3 apples, milk, bread"', 'error');
       return;
@@ -166,14 +183,23 @@ export default function ListDetailPage() {
     const duplicates = findDuplicates(parsed, existingItems);
     
     if (duplicates.length > 0) {
-      const dup = duplicates[0];
-      const match = items.find(i => normalizeItemName(i.name) === normalizeItemName(dup.name));
-      if (match) {
-        setShowDuplicate(dup);
-        setDuplicateMatch(match);
-        setInputText('');
-        return;
+      const remainingParsed = parsed.filter(p => !duplicates.some(d => normalizeItemName(d.name) === normalizeItemName(p.name)));
+      
+      // Add non-duplicates first
+      if (remainingParsed.length > 0) {
+        await createItemsFromParsed(remainingParsed);
       }
+      
+      // Start duplicate resolution queue
+      const firstDup = duplicates[0];
+      const match = items.find(i => normalizeItemName(i.name) === normalizeItemName(firstDup.name));
+      if (match) {
+        setShowDuplicate(firstDup);
+        setDuplicateMatch(match);
+        setDuplicateQueue(duplicates.slice(1));
+        setInputText('');
+      }
+      return;
     }
 
     await createItemsFromParsed(parsed);
@@ -282,8 +308,25 @@ export default function ListDetailPage() {
       await createItemsFromParsed([showDuplicate]);
     }
     
-    setShowDuplicate(null);
-    setDuplicateMatch(null);
+    // Process next in queue
+    if (duplicateQueue.length > 0) {
+      const nextDup = duplicateQueue[0];
+      const match = items.find(i => normalizeItemName(i.name) === normalizeItemName(nextDup.name));
+      if (match) {
+        setShowDuplicate(nextDup);
+        setDuplicateMatch(match);
+        setDuplicateQueue(prev => prev.slice(1));
+      } else {
+        // Match not found (shouldn't happen but for safety)
+        await createItemsFromParsed([nextDup]);
+        setDuplicateQueue(prev => prev.slice(1));
+        setShowDuplicate(null);
+        setDuplicateMatch(null);
+      }
+    } else {
+      setShowDuplicate(null);
+      setDuplicateMatch(null);
+    }
   };
 
   // Save edited item
@@ -423,7 +466,32 @@ export default function ListDetailPage() {
                     {catItems.map(item => (
                       <div
                         key={item.id}
+                        onTouchStart={(e) => {
+                          const touch = e.touches[0];
+                          (e.currentTarget as any)._touchX = touch.clientX;
+                        }}
+                        onTouchMove={(e) => {
+                          const touch = e.touches[0];
+                          const startX = (e.currentTarget as any)._touchX || 0;
+                          const diff = touch.clientX - startX;
+                          if (diff > 50) {
+                            (e.currentTarget as HTMLElement).style.transform = `translateX(${Math.min(diff, 100)}px)`;
+                            (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(245, 158, 11, 0.1)';
+                          }
+                        }}
+                        onTouchEnd={(e) => {
+                          const touch = e.changedTouches[0];
+                          const startX = (e.currentTarget as any)._touchX || 0;
+                          const diff = touch.clientX - startX;
+                          (e.currentTarget as HTMLElement).style.transform = '';
+                          (e.currentTarget as HTMLElement).style.backgroundColor = '';
+                          if (diff > 80) {
+                            handleCheck(item);
+                          }
+                          (e.currentTarget as any)._touchX = 0;
+                        }}
                         className={`
+                          transition-transform duration-200
                           ${layoutMode === 'compact' ? 'flex items-center gap-3 py-2 px-1 border-b border-warm-100' : ''}
                           ${layoutMode === 'standard' ? 'card-surface p-3 flex items-center gap-3' : ''}
                           ${layoutMode === 'visual' ? 'card-surface p-4 flex flex-col gap-2' : ''}
@@ -433,16 +501,27 @@ export default function ListDetailPage() {
                         onClick={() => handleCheck(item)}
                       >
                         {/* Checkbox */}
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleCheck(item); }}
-                          className={`
-                            shrink-0 rounded-lg border-2 flex items-center justify-center transition-all
-                            ${layoutMode === 'compact' ? 'w-5 h-5' : layoutMode === 'visual' ? 'w-7 h-7' : 'w-6 h-6'}
-                            ${item.is_checked ? 'bg-amber border-amber animate-check-pulse' : 'border-warm-200 hover:border-amber'}
-                          `}
-                        >
-                          {item.is_checked && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
-                        </button>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleCheck(item); }}
+                            className={`
+                              shrink-0 rounded-lg border-2 flex items-center justify-center transition-all
+                              ${layoutMode === 'compact' ? 'w-5 h-5' : layoutMode === 'visual' ? 'w-7 h-7' : 'w-6 h-6'}
+                              ${item.is_checked ? 'bg-amber border-amber animate-check-pulse' : 'border-warm-200 hover:border-amber'}
+                            `}
+                          >
+                            {item.is_checked && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
+                          </button>
+
+                          {layoutMode === 'visual' && !item.is_checked && (
+                            <div className="w-8 h-8 rounded-lg bg-amber-pale flex items-center justify-center">
+                              {(() => {
+                                const Icon = CATEGORY_ICONS[item.category || 'Other'] || CATEGORY_ICONS.Other;
+                                return <Icon className="w-4 h-4 text-amber" />;
+                              })()}
+                            </div>
+                          )}
+                        </div>
 
                         {/* Content */}
                         <div className={`flex-1 min-w-0 ${layoutMode === 'visual' ? '' : ''}`}>

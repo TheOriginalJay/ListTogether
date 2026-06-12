@@ -106,6 +106,24 @@ export function normalizeItemName(name: string): string {
   return name.toLowerCase().trim().replace(/\s+/g, ' ');
 }
 
+export function deduplicateParsedItems(items: ParsedItem[]): ParsedItem[] {
+  const merged: Record<string, ParsedItem> = {};
+  
+  for (const item of items) {
+    const key = `${normalizeItemName(item.name)}|${item.category}`;
+    if (merged[key]) {
+      merged[key].quantity += item.quantity;
+      if (item.estimated_price_cents) {
+        merged[key].estimated_price_cents = (merged[key].estimated_price_cents || 0) + item.estimated_price_cents;
+      }
+    } else {
+      merged[key] = { ...item };
+    }
+  }
+  
+  return Object.values(merged);
+}
+
 export function findDuplicates(newItems: ParsedItem[], existingItems: { name: string; category: string }[]): ParsedItem[] {
   return newItems.filter(newItem => {
     const normalizedNew = normalizeItemName(newItem.name);

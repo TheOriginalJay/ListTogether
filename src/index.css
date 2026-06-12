@@ -27,15 +27,15 @@
     --ring: 37 78% 56%;
     --radius: 0.625rem;
     
-    --amber: #E8A838;
-    --amber-light: #F5D78B;
-    --amber-pale: #FDF3DC;
-    --charcoal: #2D2A26;
-    --warm-600: #6B6560;
-    --warm-400: #A39E99;
-    --warm-200: #D9D4CF;
-    --warm-100: #F0EBE5;
-    --cream: #F9F7F4;
+    --amber: #F59E0B;
+    --amber-light: #FBBF24;
+    --amber-pale: #FEF3C7;
+    --charcoal: #1F2937;
+    --warm-600: #4B5563;
+    --warm-400: #9CA3AF;
+    --warm-200: #E5E7EB;
+    --warm-100: #F3F4F6;
+    --cream: #FFFBEB;
     --green: #4CAF50;
     --red: #E74C3C;
   }
