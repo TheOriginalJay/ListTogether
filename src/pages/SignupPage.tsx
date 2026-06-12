@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { ClipboardList, Chrome } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
+import { gsap } from 'gsap';
 
 export default function SignupPage() {
   const navigate = useNavigate();
-  const { signUp, signInGoogle } = useAuth();
+  const { signUp, signInGoogle, isAuthenticated } = useAuth();
   const { showToast } = useToast();
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
@@ -14,26 +15,27 @@ export default function SignupPage() {
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const getPasswordStrength = (pwd: string) => {
-    if (!pwd) return 0;
-    let score = 0;
-    if (pwd.length >= 8) score++;
-    if (/[A-Z]/.test(pwd)) score++;
-    if (/[0-9]/.test(pwd)) score++;
-    if (/[^A-Za-z0-9]/.test(pwd)) score++;
-    return score;
-  };
-
-  const strengthColors = ['bg-brand-red', 'bg-brand-orange', 'bg-amber', 'bg-brand-green'];
-  const strengthLabels = ['Weak', 'Fair', 'Good', 'Strong'];
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/dashboard', { replace: true });
+    }
+    
+    gsap.from('.signup-content > *', {
+      y: 20,
+      opacity: 0,
+      duration: 0.8,
+      stagger: 0.1,
+      ease: 'power3.out',
+    });
+  }, [isAuthenticated, navigate]);
 
   const validate = () => {
     const errs: Record<string, string> = {};
-    if (!fullName || fullName.length < 2) errs.fullName = 'Name must be at least 2 characters';
-    if (!email) errs.email = 'Email is required';
-    else if (!/\S+@\S+\.\S+/.test(email)) errs.email = 'Invalid email format';
-    if (!password) errs.password = 'Password is required';
-    else if (password.length < 8) errs.password = 'Minimum 8 characters';
+    if (!fullName || fullName.length < 2) errs.fullName = 'Min 2 characters';
+    if (!email) errs.email = 'Required';
+    else if (!/\S+@\S+\.\S+/.test(email)) errs.email = 'Invalid email';
+    if (!password) errs.password = 'Required';
+    else if (password.length < 8) errs.password = 'Min 8 characters';
     setErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -47,105 +49,80 @@ export default function SignupPage() {
     if (result.error) {
       showToast(result.error, 'error');
     } else {
-      showToast('Your 5-day trial has started!', 'success');
+      showToast('Welcome to ListTogether!', 'success');
       navigate('/dashboard');
     }
   };
 
-  const pwdStrength = getPasswordStrength(password);
-
   return (
-    <div className="min-h-screen bg-cream flex items-center justify-center px-4 py-8">
-      <div className="w-full max-w-sm">
-        <div className="text-center mb-8">
-          <div className="w-12 h-12 rounded-xl bg-amber flex items-center justify-center mx-auto mb-3">
-            <ClipboardList className="w-7 h-7 text-white" />
+    <div className="min-h-screen bg-background flex items-center justify-center px-6 py-20">
+      <div className="w-full max-w-md signup-content">
+        <div className="text-center mb-12">
+          <div className="w-16 h-16 rounded-2xl bg-charcoal flex items-center justify-center mx-auto mb-6 shadow-xl">
+            <ClipboardList className="w-8 h-8 text-white" />
           </div>
-          <h1 className="text-2xl font-bold text-charcoal">Create your account</h1>
-          <p className="text-sm text-warm-600 mt-1">Start your 5-day free trial — no charge until it ends.</p>
+          <h1 className="text-4xl font-display font-extrabold text-charcoal tracking-tight">Create account</h1>
+          <p className="text-sm font-medium text-warm-500 mt-2">Start your 5-day premium trial</p>
         </div>
 
-        <div className="bg-white rounded-2xl p-8 shadow-modal">
+        <div className="glass-panel rounded-[2.5rem] p-10">
           <button
             onClick={signInGoogle}
-            className="w-full flex items-center justify-center gap-2 bg-white border border-warm-200 rounded-full py-3 text-sm font-medium text-charcoal hover:shadow-[0_2px_8px_rgba(45,42,38,0.08)] transition-all duration-200"
+            className="w-full flex items-center justify-center gap-3 bg-white border border-black/5 rounded-2xl py-4 text-sm font-bold text-charcoal hover:bg-warm-50 hover:shadow-xl hover:shadow-charcoal/5 transition-all duration-300"
           >
             <Chrome className="w-5 h-5" />
-            Continue with Google
+            Join with Google
           </button>
 
-          <div className="flex items-center gap-3 my-6">
-            <div className="flex-1 h-px bg-warm-200" />
-            <span className="text-xs text-warm-400">or</span>
-            <div className="flex-1 h-px bg-warm-200" />
+          <div className="flex items-center gap-4 my-8">
+            <div className="flex-1 h-[1px] bg-black/5" />
+            <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-warm-300">or</span>
+            <div className="flex-1 h-[1px] bg-black/5" />
           </div>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
+          <form onSubmit={handleSubmit} className="space-y-6">
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-warm-500 ml-1">Full Name</label>
               <input
                 type="text"
-                placeholder="Full name"
+                placeholder="Alex Rivera"
                 value={fullName}
                 onChange={e => { setFullName(e.target.value); setErrors(prev => ({ ...prev, fullName: '' })); }}
-                className={`w-full input-field ${errors.fullName ? 'border-brand-red' : ''}`}
+                className={`w-full input-field ${errors.fullName ? 'border-red-500/50' : ''}`}
               />
-              {errors.fullName && <p className="text-xs text-brand-red mt-1">{errors.fullName}</p>}
             </div>
-            <div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-warm-500 ml-1">Email</label>
               <input
                 type="email"
-                placeholder="Email"
+                placeholder="alex@household.com"
                 value={email}
                 onChange={e => { setEmail(e.target.value); setErrors(prev => ({ ...prev, email: '' })); }}
-                className={`w-full input-field ${errors.email ? 'border-brand-red' : ''}`}
+                className={`w-full input-field ${errors.email ? 'border-red-500/50' : ''}`}
               />
-              {errors.email && <p className="text-xs text-brand-red mt-1">{errors.email}</p>}
             </div>
-            <div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold uppercase tracking-widest text-warm-500 ml-1">Password</label>
               <input
                 type="password"
-                placeholder="Password"
+                placeholder="••••••••"
                 value={password}
                 onChange={e => { setPassword(e.target.value); setErrors(prev => ({ ...prev, password: '' })); }}
-                className={`w-full input-field ${errors.password ? 'border-brand-red' : ''}`}
+                className={`w-full input-field ${errors.password ? 'border-red-500/50' : ''}`}
               />
-              {password && (
-                <div className="mt-2">
-                  <div className="flex gap-1 h-1">
-                    {[0, 1, 2, 3].map(i => (
-                      <div
-                        key={i}
-                        className={`flex-1 rounded-full transition-colors ${
-                          i < pwdStrength ? strengthColors[pwdStrength - 1] : 'bg-warm-200'
-                        }`}
-                      />
-                    ))}
-                  </div>
-                  <p className="text-xs text-warm-400 mt-1">
-                    {pwdStrength > 0 ? strengthLabels[pwdStrength - 1] : ''}
-                  </p>
-                </div>
-              )}
-              {errors.password && <p className="text-xs text-brand-red mt-1">{errors.password}</p>}
             </div>
             <button
               type="submit"
               disabled={loading}
-              className="w-full btn-primary flex items-center justify-center gap-2"
+              className="w-full btn-primary"
             >
-              {loading ? (
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              ) : 'Create Account'}
+              {loading ? 'Creating account...' : 'Create Account'}
             </button>
           </form>
 
-          <p className="text-center text-xs text-warm-400 mt-4">
-            By signing up, you agree to our Terms and Privacy Policy
-          </p>
-
-          <p className="text-center text-sm text-warm-600 mt-4">
+          <p className="text-center text-xs font-bold uppercase tracking-widest text-warm-400 mt-8">
             Already have an account?{' '}
-            <button onClick={() => navigate('/login')} className="text-amber font-medium hover:underline">
+            <button onClick={() => navigate('/login')} className="text-amber hover:underline">
               Sign in
             </button>
           </p>

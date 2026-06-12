@@ -20,6 +20,7 @@ import {
   addCachedItem, queueMutation, getOnlineStatus
 } from '@/lib/db';
 import type { ListItem, ShoppingList, LayoutMode, ParsedItem } from '@/types';
+import { gsap } from 'gsap';
 
 const CATEGORY_ICONS: Record<string, any> = {
   Produce: Apple,
@@ -82,7 +83,6 @@ export default function ListDetailPage() {
         setLayoutMode((listData as ShoppingList).layout_preference as LayoutMode);
       }
     } catch {
-      // Fallback to cache
       const cached = await getCachedItems(listId);
       setItems(cached);
     } finally {
@@ -93,6 +93,18 @@ export default function ListDetailPage() {
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  useEffect(() => {
+    if (!loading) {
+      gsap.from('.category-section', {
+        y: 20,
+        opacity: 0,
+        duration: 0.8,
+        stagger: 0.1,
+        ease: 'power3.out',
+      });
+    }
+  }, [loading]);
 
   // Realtime subscription
   useEffect(() => {
@@ -143,7 +155,6 @@ export default function ListDetailPage() {
       groups[cat].push(item);
     }
     
-    // Sort categories and items
     const sorted: Record<string, ListItem[]> = {};
     const categories = Object.keys(groups).sort((a, b) => {
       const aOrder = groups[a][0]?.category_sort_order || 0;
@@ -178,19 +189,16 @@ export default function ListDetailPage() {
       return;
     }
 
-    // Check for duplicates
     const existingItems = items.map(i => ({ name: i.name, category: i.category }));
     const duplicates = findDuplicates(parsed, existingItems);
     
     if (duplicates.length > 0) {
       const remainingParsed = parsed.filter(p => !duplicates.some(d => normalizeItemName(d.name) === normalizeItemName(p.name)));
       
-      // Add non-duplicates first
       if (remainingParsed.length > 0) {
         await createItemsFromParsed(remainingParsed);
       }
       
-      // Start duplicate resolution queue
       const firstDup = duplicates[0];
       const match = items.find(i => normalizeItemName(i.name) === normalizeItemName(firstDup.name));
       if (match) {
@@ -223,7 +231,6 @@ export default function ListDetailPage() {
       added_by: user.id,
     }));
 
-    // Optimistic update
     const tempItems: ListItem[] = newItems.map((ni, idx) => ({
       ...ni,
       id: `temp-${Date.now()}-${idx}`,
@@ -234,12 +241,11 @@ export default function ListDetailPage() {
     setItems(prev => [...prev, ...tempItems]);
 
     if (!getOnlineStatus()) {
-      // Queue for later
       for (const ni of newItems) {
         await queueMutation({ type: 'create_item', payload: ni });
         await addCachedItem(tempItems[newItems.indexOf(ni)]);
       }
-      showToast('Items saved locally. Will sync when online.', 'info');
+      showToast('Items saved locally', 'info');
       return;
     }
 
@@ -247,14 +253,12 @@ export default function ListDetailPage() {
       const created = await batchCreateItems(newItems);
       setItems(prev => prev.filter(i => !i.id.startsWith('temp-')).concat(created as ListItem[]));
       await cacheItems(listId, items.filter(i => !i.id.startsWith('temp-')).concat(created as ListItem[]));
-      showToast(`${created.length} item${created.length !== 1 ? 's' : ''} added`, 'success');
     } catch {
       showToast('Failed to add items', 'error');
       setItems(prev => prev.filter(i => !i.id.startsWith('temp-')));
     }
   };
 
-  // Toggle check
   const handleCheck = async (item: ListItem) => {
     const newChecked = !item.is_checked;
     setItems(prev => prev.map(i => i.id === item.id ? { ...i, is_checked: newChecked } : i));
@@ -272,7 +276,6 @@ export default function ListDetailPage() {
     }
   };
 
-  // Delete item
   const handleDelete = async (item: ListItem) => {
     setItems(prev => prev.filter(i => i.id !== item.id));
     
@@ -284,13 +287,11 @@ export default function ListDetailPage() {
 
     try {
       await deleteItem(item.id);
-      showToast('Item deleted', 'info');
     } catch {
       setItems(prev => [...prev, item]);
     }
   };
 
-  // Handle duplicate resolution
   const handleDuplicateAction = async (action: 'merge' | 'separate' | 'skip') => {
     if (!showDuplicate || !duplicateMatch) {
       setShowDuplicate(null);
@@ -299,16 +300,13 @@ export default function ListDetailPage() {
     
     if (action === 'merge') {
       const newQty = duplicateMatch.quantity + showDuplicate.quantity;
-      setItems(prev => prev.map(i => 
-        i.id === duplicateMatch.id ? { ...i, quantity: newQty } : i
-      ));
+      setItems(prev => prev.map(i => i.id === duplicateMatch.id ? { ...i, quantity: newQty } : i));
       await updateItem(duplicateMatch.id, { quantity: newQty });
       showToast('Quantities merged', 'success');
     } else if (action === 'separate') {
       await createItemsFromParsed([showDuplicate]);
     }
     
-    // Process next in queue
     if (duplicateQueue.length > 0) {
       const nextDup = duplicateQueue[0];
       const match = items.find(i => normalizeItemName(i.name) === normalizeItemName(nextDup.name));
@@ -317,7 +315,6 @@ export default function ListDetailPage() {
         setDuplicateMatch(match);
         setDuplicateQueue(prev => prev.slice(1));
       } else {
-        // Match not found (shouldn't happen but for safety)
         await createItemsFromParsed([nextDup]);
         setDuplicateQueue(prev => prev.slice(1));
         setShowDuplicate(null);
@@ -329,7 +326,6 @@ export default function ListDetailPage() {
     }
   };
 
-  // Save edited item
   const handleSaveEdit = async (updates: Partial<ListItem>) => {
     if (!showEditItem) return;
     setItems(prev => prev.map(i => i.id === showEditItem.id ? { ...i, ...updates } : i));
@@ -343,13 +339,11 @@ export default function ListDetailPage() {
 
     try {
       await updateItem(showEditItem.id, updates);
-      showToast('Item updated', 'success');
     } catch {
       setItems(prev => prev.map(i => i.id === showEditItem.id ? showEditItem : i));
     }
   };
 
-  // Toggle category collapse
   const toggleCategory = (cat: string) => {
     setCollapsedCategories(prev => {
       const next = new Set(prev);
@@ -366,40 +360,25 @@ export default function ListDetailPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-cream flex items-center justify-center">
-        <div className="w-8 h-8 border-3 border-amber border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="w-10 h-10 border-3 border-amber border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
-  if (!list) {
-    return (
-      <div className="min-h-screen bg-cream flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-warm-600 mb-4">List not found</p>
-          <button onClick={() => navigate('/dashboard')} className="btn-primary">
-            Back to Dashboard
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  const totalDollars = (runningTotal / 100).toFixed(2);
+  if (!list) return null;
 
   return (
-    <div className="min-h-screen bg-cream pb-40 sm:pb-28">
-      {/* Sticky Header */}
-      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-sm border-b border-warm-200 shadow-[0_1px_4px_rgba(45,42,38,0.04)]">
-        <div className="max-w-2xl mx-auto px-4 py-3 flex items-center justify-between">
-          <button onClick={() => navigate('/dashboard')} className="flex items-center gap-2 text-charcoal hover:text-amber transition-colors">
-            <ChevronLeft className="w-5 h-5" />
-            <span className="font-semibold text-base truncate max-w-[150px] sm:max-w-[250px]">{list.name}</span>
+    <div className="min-h-screen bg-background pb-56 sm:pb-40">
+      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-border py-6 px-6">
+        <div className="max-w-3xl mx-auto flex items-center justify-between">
+          <button onClick={() => navigate('/dashboard')} className="flex items-center gap-3 text-charcoal hover:text-amber transition-colors">
+            <ChevronLeft className="w-6 h-6" />
+            <h1 className="text-2xl font-display font-extrabold tracking-tight truncate max-w-[200px] sm:max-w-md">{list.name}</h1>
           </button>
           
           <div className="flex items-center gap-2">
-            {/* Layout toggle */}
-            <div className="flex bg-warm-100 rounded-lg p-0.5">
+            <div className="flex bg-warm-100/50 rounded-xl p-1">
               {([
                 { mode: 'compact' as LayoutMode, icon: LayoutGrid },
                 { mode: 'standard' as LayoutMode, icon: LayoutList },
@@ -408,159 +387,119 @@ export default function ListDetailPage() {
                 <button
                   key={mode}
                   onClick={() => setLayoutMode(mode)}
-                  className={`p-1.5 rounded-md transition-all ${
-                    layoutMode === mode ? 'bg-amber text-white shadow-sm' : 'text-warm-400 hover:text-charcoal'
+                  className={`p-2 rounded-lg transition-all duration-300 ${
+                    layoutMode === mode ? 'bg-white text-amber shadow-sm' : 'text-warm-400 hover:text-charcoal'
                   }`}
-                  title={`${mode} layout`}
                 >
                   <Icon className="w-4 h-4" />
                 </button>
               ))}
             </div>
-            <button
-              onClick={() => setShowSettings(true)}
-              className="p-2 rounded-lg hover:bg-warm-100 text-warm-400 hover:text-charcoal transition-colors"
-            >
+            <button onClick={() => setShowSettings(true)} className="p-3 rounded-xl hover:bg-warm-100 text-warm-400 hover:text-charcoal transition-colors">
               <Settings className="w-5 h-5" />
             </button>
-            <button
-              onClick={() => setShowShare(true)}
-              className="p-2 rounded-lg hover:bg-warm-100 text-warm-400 hover:text-charcoal transition-colors"
-            >
+            <button onClick={() => setShowShare(true)} className="p-3 rounded-xl hover:bg-warm-100 text-warm-400 hover:text-charcoal transition-colors">
               <Share2 className="w-5 h-5" />
             </button>
           </div>
         </div>
       </header>
 
-      {/* List Content */}
-      <div className="max-w-2xl mx-auto px-4 py-4">
+      <div className="max-w-3xl mx-auto px-6 py-10">
         {items.length === 0 ? (
-          <div className="text-center py-16">
-            <div className="w-16 h-16 rounded-2xl bg-amber-pale flex items-center justify-center mx-auto mb-4">
-              <ClipboardList className="w-8 h-8 text-amber" />
+          <div className="text-center py-32">
+            <div className="w-24 h-24 rounded-3xl bg-warm-100 flex items-center justify-center mx-auto mb-8">
+              <ClipboardList className="w-12 h-12 text-warm-300" />
             </div>
-            <h3 className="text-lg font-semibold text-charcoal mb-1">This list is empty</h3>
-            <p className="text-sm text-warm-600">Add items using the input bar below</p>
+            <h3 className="text-2xl font-display font-bold text-charcoal mb-2">Empty list</h3>
+            <p className="text-sm text-warm-500">Start adding items using the bar below.</p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-12">
             {Object.entries(groupedItems).map(([category, catItems]) => (
-              <div key={category}>
-                {/* Category Header */}
+              <div key={category} className="category-section">
                 <button
                   onClick={() => toggleCategory(category)}
-                  className="category-header w-full flex items-center justify-between mb-2 cursor-pointer hover:bg-warm-200/50 transition-colors"
+                  className="category-header w-full flex items-center justify-between mb-6 group"
                 >
-                  <div className="flex items-center gap-2">
-                    <GripVertical className="w-4 h-4 text-warm-400 cursor-grab" />
-                    <span>{category}</span>
-                    <span className="text-warm-400">({catItems.length})</span>
+                  <div className="flex items-center gap-3">
+                    <GripVertical className="w-4 h-4 text-warm-300" />
+                    <span className="font-display tracking-widest">{category}</span>
+                    <span className="text-warm-300 text-[10px] font-bold">[{catItems.length}]</span>
                   </div>
-                  <ChevronLeft className={`w-4 h-4 text-warm-400 transition-transform ${collapsedCategories.has(category) ? '-rotate-90' : ''}`} />
+                  <ChevronLeft className={`w-4 h-4 text-warm-300 transition-transform duration-500 ${collapsedCategories.has(category) ? '-rotate-90' : ''}`} />
                 </button>
 
-                {/* Items */}
                 {!collapsedCategories.has(category) && (
-                  <div className={layoutMode === 'visual' ? 'grid grid-cols-1 sm:grid-cols-2 gap-2' : 'space-y-2'}>
+                  <div className={layoutMode === 'visual' ? 'grid grid-cols-1 sm:grid-cols-2 gap-4' : 'space-y-3'}>
                     {catItems.map(item => (
                       <div
                         key={item.id}
-                        onTouchStart={(e) => {
-                          const touch = e.touches[0];
-                          (e.currentTarget as any)._touchX = touch.clientX;
-                        }}
+                        onTouchStart={(e) => { (e.currentTarget as any)._touchX = e.touches[0].clientX; }}
                         onTouchMove={(e) => {
-                          const touch = e.touches[0];
-                          const startX = (e.currentTarget as any)._touchX || 0;
-                          const diff = touch.clientX - startX;
+                          const diff = e.touches[0].clientX - (e.currentTarget as any)._touchX;
                           if (diff > 50) {
-                            (e.currentTarget as HTMLElement).style.transform = `translateX(${Math.min(diff, 100)}px)`;
-                            (e.currentTarget as HTMLElement).style.backgroundColor = 'rgba(245, 158, 11, 0.1)';
+                            (e.currentTarget as HTMLElement).style.transform = `translateX(${Math.min(diff, 80)}px)`;
                           }
                         }}
                         onTouchEnd={(e) => {
-                          const touch = e.changedTouches[0];
-                          const startX = (e.currentTarget as any)._touchX || 0;
-                          const diff = touch.clientX - startX;
+                          const diff = e.changedTouches[0].clientX - (e.currentTarget as any)._touchX;
                           (e.currentTarget as HTMLElement).style.transform = '';
-                          (e.currentTarget as HTMLElement).style.backgroundColor = '';
-                          if (diff > 80) {
-                            handleCheck(item);
-                          }
-                          (e.currentTarget as any)._touchX = 0;
+                          if (diff > 70) handleCheck(item);
                         }}
                         className={`
-                          transition-transform duration-200
-                          ${layoutMode === 'compact' ? 'flex items-center gap-3 py-2 px-1 border-b border-warm-100' : ''}
-                          ${layoutMode === 'standard' ? 'card-surface p-3 flex items-center gap-3' : ''}
-                          ${layoutMode === 'visual' ? 'card-surface p-4 flex flex-col gap-2' : ''}
-                          ${item.is_checked ? 'opacity-60' : ''}
-                          group cursor-pointer
+                          group cursor-pointer transition-all duration-500
+                          ${layoutMode === 'compact' ? 'flex items-center gap-4 py-3 px-2 border-b border-black/5' : 'card-premium p-5 flex items-center gap-5'}
+                          ${item.is_checked ? 'opacity-40 grayscale scale-[0.98]' : ''}
                         `}
                         onClick={() => handleCheck(item)}
                       >
-                        {/* Checkbox */}
-                        <div className="flex items-center gap-3">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); handleCheck(item); }}
-                            className={`
-                              shrink-0 rounded-lg border-2 flex items-center justify-center transition-all
-                              ${layoutMode === 'compact' ? 'w-5 h-5' : layoutMode === 'visual' ? 'w-7 h-7' : 'w-6 h-6'}
-                              ${item.is_checked ? 'bg-amber border-amber animate-check-pulse' : 'border-warm-200 hover:border-amber'}
-                            `}
-                          >
-                            {item.is_checked && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
-                          </button>
+                        <div className="flex items-center gap-4">
+                          <div className={`
+                            shrink-0 rounded-xl border-2 flex items-center justify-center transition-all duration-300
+                            ${layoutMode === 'compact' ? 'w-6 h-6' : 'w-8 h-8'}
+                            ${item.is_checked ? 'bg-amber border-amber' : 'border-warm-200 group-hover:border-amber'}
+                          `}>
+                            {item.is_checked && <Check className="w-4 h-4 text-white" strokeWidth={4} />}
+                          </div>
 
                           {layoutMode === 'visual' && !item.is_checked && (
-                            <div className="w-8 h-8 rounded-lg bg-amber-pale flex items-center justify-center">
+                            <div className="w-12 h-12 rounded-2xl bg-amber/5 flex items-center justify-center shrink-0">
                               {(() => {
                                 const Icon = CATEGORY_ICONS[item.category || 'Other'] || CATEGORY_ICONS.Other;
-                                return <Icon className="w-4 h-4 text-amber" />;
+                                return <Icon className="w-6 h-6 text-amber" />;
                               })()}
                             </div>
                           )}
                         </div>
 
-                        {/* Content */}
-                        <div className={`flex-1 min-w-0 ${layoutMode === 'visual' ? '' : ''}`}>
-                          <div className="flex items-center gap-2">
-                            <span className={`font-medium text-charcoal ${item.is_checked ? 'line-through text-warm-400' : ''} ${layoutMode === 'compact' ? 'text-sm' : layoutMode === 'visual' ? 'text-base' : ''}`}>
-                              {item.name}
-                            </span>
-                          </div>
+                        <div className="flex-1 min-w-0">
+                          <h4 className={`font-bold text-charcoal tracking-tight ${item.is_checked ? 'line-through text-warm-400' : ''} ${layoutMode === 'compact' ? 'text-base' : 'text-lg'}`}>
+                            {item.name}
+                          </h4>
                           {item.notes && layoutMode !== 'compact' && (
-                            <p className="text-xs text-warm-400 mt-0.5 truncate">{item.notes}</p>
+                            <p className="text-xs font-medium text-warm-400 mt-1 truncate">{item.notes}</p>
                           )}
                         </div>
 
-                        {/* Meta */}
-                        <div className="flex items-center gap-2 shrink-0">
+                        <div className="flex items-center gap-4 shrink-0">
                           {item.quantity > 1 && (
-                            <span className={`px-2 py-0.5 rounded-full bg-warm-100 text-warm-600 font-medium ${layoutMode === 'compact' ? 'text-[10px]' : 'text-xs'}`}>
+                            <span className="px-3 py-1 rounded-full bg-warm-100 text-warm-600 text-[10px] font-bold uppercase tracking-wider">
                               {item.quantity}{item.unit ? ` ${item.unit}` : ''}
                             </span>
                           )}
-                          {item.estimated_price_cents ? (
-                            <span className={`font-semibold text-amber ${layoutMode === 'compact' ? 'text-xs' : 'text-sm'}`}>
+                          {item.estimated_price_cents && (
+                            <span className="font-display font-extrabold text-amber tracking-tighter">
                               {formatPrice(item.estimated_price_cents)}
                             </span>
-                          ) : null}
+                          )}
                           
-                          {/* Actions (hover) */}
-                          <div className="hidden group-hover:flex items-center gap-1">
-                            <button
-                              onClick={(e) => { e.stopPropagation(); setShowEditItem(item); }}
-                              className="p-1 rounded hover:bg-warm-100 text-warm-400 hover:text-charcoal"
-                            >
-                              <Edit3 className="w-3.5 h-3.5" />
+                          <div className="hidden group-hover:flex items-center gap-2">
+                            <button onClick={(e) => { e.stopPropagation(); setShowEditItem(item); }} className="p-2 rounded-lg hover:bg-warm-100 text-warm-400">
+                              <Edit3 className="w-4 h-4" />
                             </button>
-                            <button
-                              onClick={(e) => { e.stopPropagation(); handleDelete(item); }}
-                              className="p-1 rounded hover:bg-red-50 text-warm-400 hover:text-brand-red"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
+                            <button onClick={(e) => { e.stopPropagation(); handleDelete(item); }} className="p-2 rounded-lg hover:bg-red-50 text-warm-400 hover:text-red-500">
+                              <Trash2 className="w-4 h-4" />
                             </button>
                           </div>
                         </div>
@@ -574,11 +513,9 @@ export default function ListDetailPage() {
         )}
       </div>
 
-      {/* Natural Language Input Bar + Running Total */}
-      <div className="fixed bottom-0 left-0 right-0 sm:left-16 bg-white border-t border-warm-200 z-50 shadow-[0_-2px_8px_rgba(45,42,38,0.06)]">
-        <div className="max-w-2xl mx-auto px-4 py-3">
-          {/* Input */}
-          <div className="flex items-center gap-2 mb-2">
+      <div className="fixed bottom-0 left-0 right-0 z-50 p-6 sm:p-10 pointer-events-none">
+        <div className="max-w-3xl mx-auto glass-panel rounded-[2.5rem] p-4 sm:p-6 flex flex-col gap-4 pointer-events-auto shadow-2xl shadow-charcoal/10">
+          <div className="flex items-center gap-3">
             <div className="flex-1 relative">
               <input
                 ref={inputRef}
@@ -586,168 +523,76 @@ export default function ListDetailPage() {
                 value={inputText}
                 onChange={e => setInputText(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter') handleAddItems(); }}
-                placeholder="Type items: 3 apples, 2% milk, bread..."
-                className="w-full input-field pr-10"
+                placeholder="3 honey crisp apples, whole milk..."
+                className="w-full bg-warm-50 border-none rounded-2xl px-6 py-5 text-lg font-medium placeholder:text-warm-300 focus:ring-0"
               />
               {inputText && (
-                <button
-                  onClick={() => setInputText('')}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-warm-400 hover:text-charcoal"
-                >
-                  <X className="w-4 h-4" />
+                <button onClick={() => setInputText('')} className="absolute right-4 top-1/2 -translate-y-1/2 text-warm-300 hover:text-charcoal">
+                  <X className="w-5 h-5" />
                 </button>
               )}
             </div>
-            <button
-              onClick={handleAddItems}
-              disabled={!inputText.trim()}
-              className="btn-primary py-2.5 px-4 text-sm flex items-center gap-1"
-            >
-              <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline">Add</span>
+            <button onClick={handleAddItems} disabled={!inputText.trim()} className="w-16 h-16 rounded-2xl bg-charcoal text-white flex items-center justify-center hover:scale-105 active:scale-95 transition-all">
+              <Plus className="w-7 h-7" />
             </button>
           </div>
           
-          {/* Running Total */}
-          <div className="flex items-center justify-between px-1">
-            <span className="text-xs text-warm-600">
-              {items.filter(i => i.is_checked).length}/{items.length} checked
-            </span>
-            <div className="flex items-center gap-1">
-              <span className="text-xs text-warm-600">Est. Total:</span>
-              <span className="text-lg font-bold text-amber" aria-live="polite">
-                ${totalDollars}
+          <div className="flex items-center justify-between px-2">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-amber animate-pulse" />
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-warm-400">
+                {items.filter(i => i.is_checked).length} of {items.length} secured
               </span>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-[10px] font-bold uppercase tracking-[0.2em] text-warm-400 italic">Estimated Total</span>
+              <span className="text-3xl font-display font-extrabold text-charcoal tracking-tighter">${(runningTotal / 100).toFixed(2)}</span>
             </div>
           </div>
         </div>
-        {/* Mobile bottom nav spacer */}
-        <div className="sm:hidden h-14" />
       </div>
 
-      {/* Share Modal */}
-      {showShare && list && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-charcoal/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-modal">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold text-charcoal">Share List</h2>
-              <button onClick={() => setShowShare(false)} className="text-warm-400 hover:text-charcoal">
-                <X className="w-5 h-5" />
+      {/* Modals - using glass-panel */}
+      {showShare && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-6 bg-charcoal/20 backdrop-blur-sm">
+          <div className="glass-panel rounded-[2rem] p-10 w-full max-w-lg relative">
+            <h2 className="text-3xl font-display font-extrabold text-charcoal mb-8 tracking-tight">Share List</h2>
+            <button onClick={() => setShowShare(false)} className="absolute top-6 right-6 p-2 text-warm-400 hover:text-charcoal"><X className="w-5 h-5" /></button>
+            <div className="space-y-8">
+              <div className="bg-warm-50 rounded-[1.5rem] p-8 text-center border border-black/5">
+                <span className="text-[11px] font-bold uppercase tracking-widest text-warm-400 block mb-4">Invite Code</span>
+                <span className="text-5xl font-display font-extrabold text-charcoal tracking-[0.2em]">{list.invite_code}</span>
+              </div>
+              <button 
+                onClick={() => { navigator.clipboard.writeText(list.invite_code); showToast('Code copied!', 'success'); }}
+                className="w-full btn-primary"
+              >
+                Copy Invite Code
               </button>
-            </div>
-            
-            <div className="space-y-4">
-              {list.privacy === 'private' ? (
-                <div className="bg-amber-pale border border-amber/20 rounded-xl p-5 text-center">
-                  <div className="w-12 h-12 rounded-full bg-amber/10 flex items-center justify-center mx-auto mb-3">
-                    <Lock className="w-6 h-6 text-amber" />
-                  </div>
-                  <h3 className="font-bold text-charcoal mb-1">Sharing is Disabled</h3>
-                  <p className="text-xs text-warm-600 mb-4">
-                    This list is Private. To share it with others, you need to change the privacy setting.
-                  </p>
-                  <div className="space-y-2">
-                    <button
-                      onClick={() => handleUpdateList({ privacy: 'invite_only' })}
-                      className="w-full btn-primary text-xs py-2.5"
-                    >
-                      Switch to Invite-Only
-                    </button>
-                    <button
-                      onClick={() => handleUpdateList({ privacy: 'link_sharing' })}
-                      className="w-full btn-secondary text-xs py-2.5"
-                    >
-                      Switch to Link Sharing
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  {list.privacy === 'invite_only' && (
-                    <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 mb-2">
-                      <div className="flex items-center gap-2 text-blue-600 mb-1">
-                        <Users className="w-4 h-4" />
-                        <span className="font-semibold text-xs">Invite-Only Mode</span>
-                      </div>
-                      <p className="text-[11px] text-blue-600/80 mb-2">
-                        Only people with the code can join. The public link below is disabled.
-                      </p>
-                      <button
-                        onClick={() => handleUpdateList({ privacy: 'link_sharing' })}
-                        className="text-[11px] font-bold text-blue-600 hover:underline"
-                      >
-                        Enable public link sharing instead?
-                      </button>
-                    </div>
-                  )}
-
-                  <div>
-                    <label className="text-sm font-semibold text-charcoal mb-2 block">6-Digit Invite Code</label>
-                    <div className="bg-warm-100 rounded-xl p-4 text-center">
-                      <span className="text-3xl font-bold text-charcoal tracking-[0.1em]">{list.invite_code}</span>
-                    </div>
-                    <p className="text-xs text-warm-400 mt-1">Co-shoppers enter this code to join</p>
-                    <button
-                      onClick={() => { navigator.clipboard.writeText(list.invite_code); showToast('Code copied!', 'success'); }}
-                      className="btn-secondary text-xs mt-2 w-full"
-                    >
-                      Copy Code
-                    </button>
-                  </div>
-                  
-                  <div className={list.privacy === 'invite_only' ? 'opacity-40 grayscale pointer-events-none' : ''}>
-                    <label className="text-sm font-semibold text-charcoal mb-2 block">Public View Link</label>
-                    <div className="bg-warm-100 rounded-xl p-3 text-sm text-warm-600 truncate">
-                      {window.location.origin}/l/{list.share_token}
-                    </div>
-                    <p className="text-xs text-warm-400 mt-1">Anyone with this link can view without signing in</p>
-                    <button
-                      onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/l/${list.share_token}`); showToast('Link copied!', 'success'); }}
-                      className="btn-secondary text-xs mt-2 w-full"
-                    >
-                      Copy Link
-                    </button>
-                  </div>
-                </>
-              )}
             </div>
           </div>
         </div>
       )}
 
-      {/* Settings Modal */}
-      {showSettings && list && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-charcoal/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-modal">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold text-charcoal">List Settings</h2>
-              <button onClick={() => setShowSettings(false)} className="text-warm-400 hover:text-charcoal">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            
+      {showSettings && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-6 bg-charcoal/20 backdrop-blur-sm">
+          <div className="glass-panel rounded-[2rem] p-10 w-full max-w-lg relative">
+            <h2 className="text-3xl font-display font-extrabold text-charcoal mb-8 tracking-tight">List Settings</h2>
+            <button onClick={() => setShowSettings(false)} className="absolute top-6 right-6 p-2 text-warm-400 hover:text-charcoal"><X className="w-5 h-5" /></button>
             <ListSettingsForm
               list={list}
-              onSave={(updates) => {
-                handleUpdateList(updates);
-                setShowSettings(false);
-              }}
+              onSave={(updates) => { handleUpdateList(updates); setShowSettings(false); }}
               onClose={() => setShowSettings(false)}
             />
           </div>
         </div>
       )}
 
-      {/* Edit Item Modal */}
       {showEditItem && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-charcoal/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-modal">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold text-charcoal">Edit Item</h2>
-              <button onClick={() => setShowEditItem(null)} className="text-warm-400 hover:text-charcoal">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-6 bg-charcoal/20 backdrop-blur-sm">
+          <div className="glass-panel rounded-[2rem] p-10 w-full max-w-lg relative">
+            <h2 className="text-3xl font-display font-extrabold text-charcoal mb-8 tracking-tight">Edit Item</h2>
+            <button onClick={() => setShowEditItem(null)} className="absolute top-6 right-6 p-2 text-warm-400 hover:text-charcoal"><X className="w-5 h-5" /></button>
             <EditItemForm
               item={showEditItem}
               onSave={handleSaveEdit}
@@ -758,27 +603,20 @@ export default function ListDetailPage() {
         </div>
       )}
 
-      {/* Duplicate Detection Modal */}
       {showDuplicate && duplicateMatch && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-charcoal/50 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-modal text-center">
-            <div className="w-12 h-12 rounded-full bg-brand-orange/10 flex items-center justify-center mx-auto mb-4">
-              <AlertTriangle className="w-6 h-6 text-brand-orange" />
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-6 bg-charcoal/20 backdrop-blur-sm">
+          <div className="glass-panel rounded-[2.5rem] p-10 w-full max-w-sm text-center">
+            <div className="w-20 h-20 rounded-full bg-amber/10 flex items-center justify-center mx-auto mb-8 animate-bounce">
+              <AlertTriangle className="w-10 h-10 text-amber" />
             </div>
-            <h2 className="text-lg font-bold text-charcoal mb-2">Already on your list</h2>
-            <p className="text-sm text-warm-600 mb-6">
-              "{showDuplicate.name}" is already in the {duplicateMatch.category} category with quantity {duplicateMatch.quantity}.
+            <h2 className="text-2xl font-display font-bold text-charcoal mb-4 tracking-tight">Already in list</h2>
+            <p className="text-sm text-warm-500 mb-10 leading-relaxed">
+              "{showDuplicate.name}" is already in your {duplicateMatch.category} category.
             </p>
-            <div className="space-y-2">
-              <button onClick={() => handleDuplicateAction('merge')} className="w-full btn-primary">
-                Merge quantities
-              </button>
-              <button onClick={() => handleDuplicateAction('separate')} className="w-full btn-secondary">
-                Add as separate item
-              </button>
-              <button onClick={() => handleDuplicateAction('skip')} className="w-full text-warm-600 text-sm py-2 hover:text-charcoal">
-                Skip
-              </button>
+            <div className="space-y-3">
+              <button onClick={() => handleDuplicateAction('merge')} className="w-full btn-primary">Merge quantities</button>
+              <button onClick={() => handleDuplicateAction('separate')} className="w-full btn-secondary">Add as separate</button>
+              <button onClick={() => handleDuplicateAction('skip')} className="w-full text-warm-400 font-bold uppercase tracking-widest text-[10px] pt-4">Skip</button>
             </div>
           </div>
         </div>
@@ -787,7 +625,7 @@ export default function ListDetailPage() {
   );
 }
 
-// List Settings Form Component
+// Minimal refactors for forms to match style
 function ListSettingsForm({ list, onSave, onClose }: {
   list: ShoppingList;
   onSave: (updates: Partial<ShoppingList>) => void;
@@ -796,75 +634,20 @@ function ListSettingsForm({ list, onSave, onClose }: {
   const [name, setName] = useState(list.name);
   const [privacy, setPrivacy] = useState(list.privacy);
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSave({
-      name: name.trim() || list.name,
-      privacy,
-    });
-  };
-
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <div>
-        <label className="text-sm font-medium text-charcoal mb-1.5 block">List Name</label>
-        <input
-          type="text"
-          value={name}
-          onChange={e => setName(e.target.value)}
-          className="w-full input-field"
-          placeholder="Enter list name..."
-        />
+    <form onSubmit={(e) => { e.preventDefault(); onSave({ name: name.trim(), privacy }); }} className="space-y-8">
+      <div className="space-y-2">
+        <label className="text-[11px] font-bold uppercase tracking-widest text-warm-500 ml-1">Name</label>
+        <input type="text" value={name} onChange={e => setName(e.target.value)} className="w-full input-field" />
       </div>
-
-      <div>
-        <label className="text-sm font-medium text-charcoal mb-3 block">Privacy Settings</label>
-        <div className="space-y-2">
-          {([
-            { value: 'private', label: 'Private', desc: 'Only you can see this list', icon: Lock },
-            { value: 'invite_only', label: 'Invite-Only', desc: 'People you invite can edit', icon: Users },
-            { value: 'link_sharing', label: 'Link Sharing', desc: 'Anyone with the link can view', icon: Link2 },
-          ] as const).map(option => {
-            const OptIcon = option.icon;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                onClick={() => setPrivacy(option.value)}
-                className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all ${
-                  privacy === option.value
-                    ? 'border-amber bg-amber-pale'
-                    : 'border-warm-200 hover:border-warm-400'
-                }`}
-              >
-                <OptIcon className={`w-5 h-5 ${privacy === option.value ? 'text-amber' : 'text-warm-400'}`} />
-                <div className="text-left">
-                  <p className="text-sm font-medium text-charcoal">{option.label}</p>
-                  <p className="text-xs text-warm-400">{option.desc}</p>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="flex gap-3">
-        <button type="button" onClick={onClose} className="flex-1 btn-secondary">
-          Cancel
-        </button>
-        <button
-          type="submit"
-          disabled={!name.trim()}
-          className="flex-1 btn-primary"
-        >
-          Save Changes
-        </button>
+      <div className="flex gap-4">
+        <button type="button" onClick={onClose} className="flex-1 btn-secondary">Cancel</button>
+        <button type="submit" className="flex-1 btn-primary">Save</button>
       </div>
     </form>
   );
 }
 
-// Edit Item Form Component
 function EditItemForm({ item, onSave, onDelete, onClose }: {
   item: ListItem;
   onSave: (updates: Partial<ListItem>) => void;
@@ -877,73 +660,42 @@ function EditItemForm({ item, onSave, onDelete, onClose }: {
   const [category, setCategory] = useState(item.category);
   const [price, setPrice] = useState(item.estimated_price_cents ? (item.estimated_price_cents / 100).toFixed(2) : '');
   const [notes, setNotes] = useState(item.notes || '');
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-
-  const units = ['', 'ea', 'lb', 'oz', 'gal', 'qt', 'pt', 'kg', 'g', 'ml', 'L', 'pack', 'bunch', 'dozen', 'box', 'bag', 'can', 'bottle', 'jar', 'loaf'];
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSave({
-      name: name.trim() || item.name,
-      quantity: parseFloat(quantity) || 1,
-      unit: unit || null,
-      category: category.trim() || item.category,
-      estimated_price_cents: price ? Math.round(parseFloat(price) * 100) : null,
-      notes: notes.trim() || null,
-    });
-  };
-
-  if (showDeleteConfirm) {
-    return (
-      <div className="text-center">
-        <p className="text-charcoal mb-2">Delete "{item.name}"?</p>
-        <p className="text-sm text-warm-600 mb-6">This action cannot be undone.</p>
-        <div className="flex gap-3">
-          <button onClick={() => setShowDeleteConfirm(false)} className="flex-1 btn-secondary">Cancel</button>
-          <button onClick={() => { onDelete(item); onClose(); }} className="flex-1 bg-brand-red text-white rounded-full py-3 font-medium hover:bg-red-600 transition-colors">
-            Delete
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <label className="text-sm font-medium text-charcoal mb-1 block">Name</label>
-        <input type="text" value={name} onChange={e => setName(e.target.value)} className="w-full input-field" />
+    <form onSubmit={(e) => {
+      e.preventDefault();
+      onSave({
+        name: name.trim(),
+        quantity: parseFloat(quantity) || 1,
+        unit: unit || null,
+        category: category.trim(),
+        estimated_price_cents: price ? Math.round(parseFloat(price) * 100) : null,
+        notes: notes.trim() || null,
+      });
+    }} className="space-y-6">
+      <div className="space-y-2">
+        <label className="text-[11px] font-bold uppercase tracking-widest text-warm-500 ml-1">Item Name</label>
+        <input type="text" value={name} onChange={e => setName(e.target.value)} className="w-full input-field font-bold text-lg" />
       </div>
-      <div className="flex gap-3">
-        <div className="flex-1">
-          <label className="text-sm font-medium text-charcoal mb-1 block">Quantity</label>
-          <input type="number" value={quantity} onChange={e => setQuantity(e.target.value)} className="w-full input-field" min="0.1" step="0.1" />
+      <div className="grid grid-cols-2 gap-4">
+        <div className="space-y-2">
+          <label className="text-[11px] font-bold uppercase tracking-widest text-warm-500 ml-1">Qty</label>
+          <input type="number" value={quantity} onChange={e => setQuantity(e.target.value)} className="w-full input-field" />
         </div>
-        <div className="w-28">
-          <label className="text-sm font-medium text-charcoal mb-1 block">Unit</label>
-          <select value={unit} onChange={e => setUnit(e.target.value)} className="w-full input-field">
-            {units.map(u => <option key={u} value={u}>{u || '—'}</option>)}
-          </select>
+        <div className="space-y-2">
+          <label className="text-[11px] font-bold uppercase tracking-widest text-warm-500 ml-1">Price ($)</label>
+          <input type="number" value={price} onChange={e => setPrice(e.target.value)} className="w-full input-field" />
         </div>
       </div>
-      <div>
-        <label className="text-sm font-medium text-charcoal mb-1 block">Category</label>
-        <input type="text" value={category} onChange={e => setCategory(e.target.value)} className="w-full input-field" />
+      <div className="space-y-2">
+        <label className="text-[11px] font-bold uppercase tracking-widest text-warm-500 ml-1">Notes</label>
+        <textarea value={notes} onChange={e => setNotes(e.target.value)} className="w-full input-field min-h-[100px]" placeholder="Add context..." />
       </div>
-      <div>
-        <label className="text-sm font-medium text-charcoal mb-1 block">Price ($)</label>
-        <input type="number" value={price} onChange={e => setPrice(e.target.value)} className="w-full input-field" min="0" step="0.01" placeholder="0.00" />
-      </div>
-      <div>
-        <label className="text-sm font-medium text-charcoal mb-1 block">Notes</label>
-        <textarea value={notes} onChange={e => setNotes(e.target.value)} className="w-full input-field min-h-[60px] resize-none" placeholder="Optional notes..." />
-      </div>
-      <div className="flex gap-3 pt-2">
-        <button type="button" onClick={() => setShowDeleteConfirm(true)} className="px-4 py-3 text-brand-red font-medium hover:bg-red-50 rounded-full transition-colors">
-          <Trash2 className="w-5 h-5" />
+      <div className="flex gap-4 pt-4">
+        <button type="button" onClick={() => { onDelete(item); onClose(); }} className="w-16 h-16 rounded-2xl bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-100 transition-colors">
+          <Trash2 className="w-6 h-6" />
         </button>
-        <button type="button" onClick={onClose} className="flex-1 btn-secondary">Cancel</button>
-        <button type="submit" className="flex-1 btn-primary">Save</button>
+        <button type="submit" className="flex-1 btn-primary">Update Item</button>
       </div>
     </form>
   );
