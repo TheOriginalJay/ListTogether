@@ -1,0 +1,103 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 10%;
+    --primary: 37 78% 40%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 10%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 45%;
+    --accent: 0 0% 96%;
+    --accent-foreground: 0 0% 10%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 90%;
+    --input: 0 0% 90%;
+    --ring: 37 78% 40%;
+    --radius: 1rem;
+  }
+
+  * { @apply border-border; }
+
+  body {
+    @apply bg-[#FAFAF8] text-[#1A1A1A];
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+    letter-spacing: -0.02em;
+  }
+}
+
+@layer utilities {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2
+           bg-[#1A1A1A] text-white rounded-xl px-6 py-3 font-medium text-sm
+           hover:bg-[#333] active:scale-[0.98]
+           transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2
+           bg-white text-[#1A1A1A] rounded-xl px-6 py-3 font-medium text-sm
+           border border-[#E5E5E0]
+           hover:bg-[#F5F5F0] active:scale-[0.98]
+           transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .card-premium {
+    @apply bg-white rounded-2xl border border-[#E5E5E0]/60
+           hover:shadow-lg hover:shadow-[#1A1A1A]/[0.03] hover:border-[#D97706]/20
+           transition-all duration-300;
+  }
+
+  .glass-panel {
+    @apply bg-white/95 backdrop-blur-xl border border-white/20 shadow-xl;
+  }
+
+  .input-field {
+    @apply bg-[#F5F5F0] rounded-xl px-4 py-3.5
+           text-sm font-medium text-[#1A1A1A] placeholder:text-[#C4C4BC]
+           focus:bg-white focus:ring-2 focus:ring-[#D97706]/20
+           focus:outline-none transition-all duration-200;
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #E5E5E0; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #C4C4BC; }
+
+/* Smooth scroll */
+html { scroll-behavior: smooth; }
+
+/* Selection */
+::selection { background-color: rgba(217, 119, 6, 0.2); }
+
+/* Focus visible */
+:focus-visible { outline: 2px solid rgba(217, 119, 6, 0.3); outline-offset: 2px; }
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
