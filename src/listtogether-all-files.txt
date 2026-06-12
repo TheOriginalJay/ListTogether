@@ -1,0 +1,2873 @@
+================================================================================
+FILE: src/lib/supabase.ts
+================================================================================
+import { createClient } from '@supabase/supabase-js';
+import type { User as UserProfile, ShoppingList, ListItem, ListCollaborator as Collaborator } from '@/types';
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  console.error('Supabase credentials missing. Check your environment variables.');
+}
+
+export const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseAnonKey || 'placeholder', {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+});
+
+export type { UserProfile, ShoppingList, ListItem, Collaborator };
+
+// Auth helpers
+export async function signInWithEmail(email: string, password: string) {
+  return supabase.auth.signInWithPassword({ email, password });
+}
+
+export async function signOut() {
+  return supabase.auth.signOut();
+}
+
+export async function getCurrentUser(): Promise<UserProfile | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data: profile } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', user.id)
+    .single();
+
+  return profile as UserProfile | null;
+}
+
+// List helpers
+export async function getUserLists(): Promise<ShoppingList[]> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+
+  // Fetch lists owned by the user
+  const { data: ownedLists, error: ownedError } = await supabase
+    .from('lists')
+    .select('*, items(count)')
+    .eq('owner_id', user.id);
+
+  if (ownedError) console.error('Error fetching owned lists:', ownedError);
+
+  // Fetch lists where the user is a collaborator
+  const { data: collabData, error: collabError } = await supabase
+    .from('list_collaborators')
+    .select('list_id, lists(*, items(count))')
+    .eq('user_id', user.id);
+
+  if (collabError) console.error('Error fetching collaborator entries:', collabError);
+
+  // collabData rows have a .lists property (singular join alias → single object)
+  const collaboratedLists = (collabData || [])
+    .map((c: any) => c.lists)
+    .filter(Boolean)
+    .flat();
+
+  const allLists = [...(ownedLists || []), ...collaboratedLists];
+
+  // Deduplicate by ID and sort by updated_at
+  const uniqueLists = Array.from(new Map(allLists.map((l: any) => [l.id, l])).values());
+  return (uniqueLists as any[]).sort((a, b) => 
+    new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+  ) as ShoppingList[];
+}
+
+export async function createList(name: string, privacy: string): Promise<ShoppingList> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const inviteCode = generateInviteCode();
+  const shareToken = crypto.randomUUID();
+
+  const { data, error } = await supabase
+    .from('lists')
+    .insert({
+      owner_id: user.id,
+      name,
+      privacy,
+      invite_code: inviteCode,
+      share_token: shareToken,
+      layout_preference: 'standard',
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as ShoppingList;
+}
+
+export async function getListById(listId: string): Promise<ShoppingList | null> {
+  const { data, error } = await supabase
+    .from('lists')
+    .select('*, items(*)')
+    .eq('id', listId)
+    .single();
+
+  if (error) return null;
+  return data as ShoppingList;
+}
+
+export async function getListByShareToken(token: string): Promise<ShoppingList | null> {
+  const { data, error } = await supabase
+    .from('lists')
+    .select('*, items(*), owner:users(full_name, email)')
+    .eq('share_token', token)
+    .single();
+
+  if (error) return null;
+  // Only expose link_sharing lists to public
+  const list = data as ShoppingList;
+  if (list.privacy !== 'link_sharing') return null;
+  return list;
+}
+
+export async function updateList(listId: string, updates: Partial<ShoppingList>) {
+  const { data, error } = await supabase
+    .from('lists')
+    .update(updates)
+    .eq('id', listId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as ShoppingList;
+}
+
+export async function deleteList(listId: string) {
+  const { error } = await supabase
+    .from('lists')
+    .delete()
+    .eq('id', listId);
+
+  if (error) throw error;
+}
+
+// Item helpers
+export async function getListItems(listId: string): Promise<ListItem[]> {
+  const { data, error } = await supabase
+    .from('items')
+    .select('*')
+    .eq('list_id', listId)
+    .order('category_sort_order', { ascending: true })
+    .order('sort_order', { ascending: true });
+
+  if (error) throw error;
+  return (data || []) as ListItem[];
+}
+
+export async function createItem(item: Omit<ListItem, 'id' | 'created_at' | 'updated_at'>): Promise<ListItem> {
+  const { data, error } = await supabase
+    .from('items')
+    .insert(item)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as ListItem;
+}
+
+export async function updateItem(itemId: string, updates: Partial<ListItem>) {
+  const { data, error } = await supabase
+    .from('items')
+    .update(updates)
+    .eq('id', itemId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as ListItem;
+}
+
+export async function deleteItem(itemId: string) {
+  const { error } = await supabase
+    .from('items')
+    .delete()
+    .eq('id', itemId);
+
+  if (error) throw error;
+}
+
+export async function batchCreateItems(items: Omit<ListItem, 'id' | 'created_at' | 'updated_at'>[]): Promise<ListItem[]> {
+  const { data, error } = await supabase
+    .from('items')
+    .insert(items)
+    .select();
+
+  if (error) throw error;
+  return (data || []) as ListItem[];
+}
+
+// Collaborator helpers
+export async function getCollaborators(listId: string): Promise<Collaborator[]> {
+  const { data, error } = await supabase
+    .from('list_collaborators')
+    .select('*')
+    .eq('list_id', listId);
+
+  if (error) throw error;
+  return (data || []) as Collaborator[];
+}
+
+export async function addCollaborator(listId: string, email: string, role: string): Promise<Collaborator> {
+  const { data, error } = await supabase
+    .from('list_collaborators')
+    .insert({ list_id: listId, email, role })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as Collaborator;
+}
+
+export async function removeCollaborator(collaboratorId: string) {
+  const { error } = await supabase
+    .from('list_collaborators')
+    .delete()
+    .eq('id', collaboratorId);
+
+  if (error) throw error;
+}
+
+// FIXED: Join by invite code - complete rewrite with proper error handling
+export async function joinListByCode(code: string): Promise<string> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const normalizedCode = code.toUpperCase().trim();
+  if (normalizedCode.length !== 6) throw new Error('Invite code must be 6 characters');
+
+  // Find the list by invite code
+  const { data: list, error: listError } = await supabase
+    .from('lists')
+    .select('id, owner_id, privacy, invite_code')
+    .eq('invite_code', normalizedCode)
+    .single();
+
+  if (listError || !list) throw new Error('Invalid invite code');
+
+  // If user is already the owner, just return the list id
+  if (list.owner_id === user.id) {
+    return list.id;
+  }
+
+  // Check if already a collaborator
+  const { data: existing, error: existingError } = await supabase
+    .from('list_collaborators')
+    .select('id')
+    .eq('list_id', list.id)
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (existingError) console.error('Error checking existing collaborator:', existingError);
+
+  if (existing) {
+    // Already a member — just return the list id
+    return list.id;
+  }
+
+  // Insert as new collaborator
+  const { error: insertError } = await supabase
+    .from('list_collaborators')
+    .insert({
+      list_id: list.id,
+      user_id: user.id,
+      role: 'editor',
+      accepted_at: new Date().toISOString(),
+    });
+
+  if (insertError) {
+    console.error('Error joining list:', insertError);
+    throw new Error('Failed to join list. You may already be a member.');
+  }
+
+  return list.id;
+}
+
+// Realtime subscriptions
+export function subscribeToList(listId: string, callback: (payload: any) => void) {
+  return supabase
+    .channel(`list_${listId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'items',
+        filter: `list_id=eq.${listId}`,
+      },
+      callback
+    )
+    .subscribe();
+}
+
+export function subscribeToListChanges(listId: string, callback: (payload: any) => void) {
+  return supabase
+    .channel(`list_meta_${listId}`)
+    .on(
+      'postgres_changes',
+      {
+        event: 'UPDATE',
+        schema: 'public',
+        table: 'lists',
+        filter: `id=eq.${listId}`,
+      },
+      callback
+    )
+    .subscribe();
+}
+
+function generateInviteCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return code;
+}
+
+
+================================================================================
+FILE: src/pages/ListDetailPage.tsx
+================================================================================
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useParams, useNavigate } from 'react-router';
+import {
+  ChevronLeft, LayoutGrid, LayoutList, Columns3, Share2,
+  GripVertical, Check, Plus, X, Trash2, Edit3,
+  AlertTriangle, ClipboardList, Settings, ArrowRight,
+  Apple, Droplets, Beef, Croissant, Box, IceCream, Coffee, Bath, Cookie,
+  MoreHorizontal, UserPlus, Link2, Copy, CheckCircle2
+} from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
+import {
+  parseNaturalLanguage, findDuplicates, normalizeItemName, deduplicateParsedItems
+} from '@/lib/parser';
+import {
+  getListItems, updateItem, deleteItem, batchCreateItems,
+  getListById, subscribeToList, updateList, getCollaborators
+} from '@/lib/supabase';
+import {
+  cacheItems, getCachedItems, updateCachedItem, deleteCachedItem,
+  addCachedItem, queueMutation, getOnlineStatus
+} from '@/lib/db';
+import type { ListItem, ShoppingList, LayoutMode, ParsedItem } from '@/types';
+
+const CATEGORY_ICONS: Record<string, any> = {
+  Produce: Apple,
+  Dairy: Droplets,
+  Meat: Beef,
+  Bakery: Croissant,
+  Pantry: Box,
+  Frozen: IceCream,
+  Beverages: Coffee,
+  Household: Bath,
+  Snacks: Cookie,
+  Other: ClipboardList,
+};
+
+// Premium color system for categories
+const CATEGORY_COLORS: Record<string, { bg: string; border: string; text: string; icon: string }> = {
+  Produce:   { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-700', icon: 'text-emerald-500' },
+  Dairy:     { bg: 'bg-sky-50', border: 'border-sky-200', text: 'text-sky-700', icon: 'text-sky-500' },
+  Meat:      { bg: 'bg-rose-50', border: 'border-rose-200', text: 'text-rose-700', icon: 'text-rose-500' },
+  Bakery:    { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', icon: 'text-amber-500' },
+  Pantry:    { bg: 'bg-stone-50', border: 'border-stone-200', text: 'text-stone-700', icon: 'text-stone-500' },
+  Frozen:    { bg: 'bg-cyan-50', border: 'border-cyan-200', text: 'text-cyan-700', icon: 'text-cyan-500' },
+  Beverages: { bg: 'bg-indigo-50', border: 'border-indigo-200', text: 'text-indigo-700', icon: 'text-indigo-500' },
+  Household: { bg: 'bg-violet-50', border: 'border-violet-200', text: 'text-violet-700', icon: 'text-violet-500' },
+  Snacks:    { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-700', icon: 'text-orange-500' },
+  Other:     { bg: 'bg-slate-50', border: 'border-slate-200', text: 'text-slate-700', icon: 'text-slate-500' },
+};
+
+export default function ListDetailPage() {
+  const { listId } = useParams<{ listId: string }>();
+  const navigate = useNavigate();
+  const { showToast } = useToast();
+  const { user } = useAuth();
+
+  const [list, setList] = useState<ShoppingList | null>(null);
+  const [items, setItems] = useState<ListItem[]>([]);
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>('standard');
+  const [inputText, setInputText] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [showShare, setShowShare] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showEditItem, setShowEditItem] = useState<ListItem | null>(null);
+  const [showDuplicate, setShowDuplicate] = useState<ParsedItem | null>(null);
+  const [duplicateMatch, setDuplicateMatch] = useState<ListItem | null>(null);
+  const [duplicateQueue, setDuplicateQueue] = useState<ParsedItem[]>([]);
+  const [checkedBehavior] = useState(true);
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
+  const [isInputFocused, setIsInputFocused] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [activeItemId, setActiveItemId] = useState<string | null>(null);
+
+  // Update list metadata
+  const handleUpdateList = async (updates: Partial<ShoppingList>) => {
+    if (!listId) return;
+    try {
+      const updated = await updateList(listId, updates);
+      setList(updated);
+      showToast('List updated', 'success');
+    } catch {
+      showToast('Failed to update list', 'error');
+    }
+  };
+
+  // Fetch list and items
+  const fetchData = useCallback(async () => {
+    if (!listId) return;
+    try {
+      const [listData, itemsData] = await Promise.all([
+        getListById(listId),
+        getListItems(listId),
+      ]);
+      setList(listData as ShoppingList);
+      setItems(itemsData);
+      await cacheItems(listId, itemsData);
+      if ((listData as ShoppingList)?.layout_preference) {
+        setLayoutMode((listData as ShoppingList).layout_preference as LayoutMode);
+      }
+    } catch {
+      const cached = await getCachedItems(listId);
+      setItems(cached);
+    } finally {
+      setLoading(false);
+    }
+  }, [listId]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // Realtime subscription
+  useEffect(() => {
+    if (!listId) return;
+    const subscription = subscribeToList(listId, (payload) => {
+      if (payload.eventType === 'INSERT') {
+        setItems(prev => {
+          if (prev.some(i => i.id === payload.new.id)) return prev;
+          return [...prev, payload.new as ListItem];
+        });
+      } else if (payload.eventType === 'UPDATE') {
+        setItems(prev => prev.map(i => i.id === payload.new.id ? payload.new as ListItem : i));
+      } else if (payload.eventType === 'DELETE') {
+        setItems(prev => prev.filter(i => i.id !== payload.old.id));
+      }
+    });
+    return () => { subscription.unsubscribe(); };
+  }, [listId]);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === 'n' || e.key === 'N') {
+        e.preventDefault();
+        inputRef.current?.focus();
+      }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        if (e.metaKey || e.ctrlKey) {
+          e.preventDefault();
+          setLayoutMode(prev => {
+            const modes: LayoutMode[] = ['compact', 'standard', 'visual'];
+            const idx = modes.indexOf(prev);
+            if (e.key === 'ArrowLeft') return modes[Math.max(0, idx - 1)];
+            return modes[Math.min(2, idx + 1)];
+          });
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Group items by category
+  const groupedItems = useMemo(() => {
+    const groups: Record<string, ListItem[]> = {};
+    for (const item of items) {
+      const cat = item.category || 'Other';
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(item);
+    }
+
+    const sorted: Record<string, ListItem[]> = {};
+    const categories = Object.keys(groups).sort((a, b) => {
+      const aOrder = groups[a][0]?.category_sort_order || 0;
+      const bOrder = groups[b][0]?.category_sort_order || 0;
+      return aOrder - bOrder;
+    });
+
+    for (const cat of categories) {
+      sorted[cat] = groups[cat].sort((a, b) => {
+        if (checkedBehavior) {
+          if (a.is_checked !== b.is_checked) return a.is_checked ? 1 : -1;
+        }
+        return (a.sort_order || 0) - (b.sort_order || 0);
+      });
+    }
+    return sorted;
+  }, [items, checkedBehavior]);
+
+  // Running total
+  const runningTotal = useMemo(() => {
+    return items
+      .filter(i => !i.is_checked)
+      .reduce((sum, i) => sum + (i.quantity || 1) * (i.estimated_price_cents || 0), 0);
+  }, [items]);
+
+  const checkedCount = items.filter(i => i.is_checked).length;
+  const totalCount = items.length;
+  const progress = totalCount > 0 ? (checkedCount / totalCount) * 100 : 0;
+
+  // Handle natural language input
+  const handleAddItems = async () => {
+    if (!inputText.trim() || !listId) return;
+    const parsed = deduplicateParsedItems(parseNaturalLanguage(inputText));
+    if (parsed.length === 0) {
+      showToast('Could not parse. Try: "3 apples, milk, bread"', 'error');
+      return;
+    }
+
+    const existingItems = items.map(i => ({ name: i.name, category: i.category }));
+    const duplicates = findDuplicates(parsed, existingItems);
+
+    if (duplicates.length > 0) {
+      const remainingParsed = parsed.filter(p => !duplicates.some(d => normalizeItemName(d.name) === normalizeItemName(p.name)));
+
+      if (remainingParsed.length > 0) {
+        await createItemsFromParsed(remainingParsed);
+      }
+
+      const firstDup = duplicates[0];
+      const match = items.find(i => normalizeItemName(i.name) === normalizeItemName(firstDup.name));
+      if (match) {
+        setShowDuplicate(firstDup);
+        setDuplicateMatch(match);
+        setDuplicateQueue(duplicates.slice(1));
+        setInputText('');
+      }
+      return;
+    }
+
+    await createItemsFromParsed(parsed);
+    setInputText('');
+  };
+
+  const createItemsFromParsed = async (parsedItems: ParsedItem[]) => {
+    if (!listId || !user) return;
+
+    const newItems = parsedItems.map((p, idx) => ({
+      list_id: listId,
+      name: p.name,
+      quantity: p.quantity,
+      unit: p.unit,
+      category: p.category,
+      notes: null as string | null,
+      estimated_price_cents: p.estimated_price_cents,
+      is_checked: false,
+      sort_order: items.length + idx,
+      category_sort_order: 0,
+      added_by: user.id,
+    }));
+
+    const tempItems: ListItem[] = newItems.map((ni, idx) => ({
+      ...ni,
+      id: `temp-${Date.now()}-${idx}`,
+      notes: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }));
+    setItems(prev => [...prev, ...tempItems]);
+
+    if (!getOnlineStatus()) {
+      for (const ni of newItems) {
+        await queueMutation({ type: 'create_item', payload: ni });
+        await addCachedItem(tempItems[newItems.indexOf(ni)]);
+      }
+      showToast('Items saved locally', 'info');
+      return;
+    }
+
+    try {
+      const created = await batchCreateItems(newItems);
+      setItems(prev => prev.filter(i => !i.id.startsWith('temp-')).concat(created as ListItem[]));
+      await cacheItems(listId, items.filter(i => !i.id.startsWith('temp-')).concat(created as ListItem[]));
+    } catch {
+      showToast('Failed to add items', 'error');
+      setItems(prev => prev.filter(i => !i.id.startsWith('temp-')));
+    }
+  };
+
+  const handleCheck = async (item: ListItem) => {
+    const newChecked = !item.is_checked;
+    setItems(prev => prev.map(i => i.id === item.id ? { ...i, is_checked: newChecked } : i));
+
+    if (!getOnlineStatus()) {
+      await queueMutation({ type: 'check_item', payload: { id: item.id, is_checked: newChecked } });
+      await updateCachedItem(item.id, { is_checked: newChecked });
+      return;
+    }
+
+    try {
+      await updateItem(item.id, { is_checked: newChecked });
+    } catch {
+      setItems(prev => prev.map(i => i.id === item.id ? { ...i, is_checked: item.is_checked } : i));
+    }
+  };
+
+  const handleDelete = async (item: ListItem) => {
+    setItems(prev => prev.filter(i => i.id !== item.id));
+
+    if (!getOnlineStatus()) {
+      await queueMutation({ type: 'delete_item', payload: { id: item.id } });
+      await deleteCachedItem(item.id);
+      return;
+    }
+
+    try {
+      await deleteItem(item.id);
+    } catch {
+      setItems(prev => [...prev, item]);
+    }
+  };
+
+  const handleDuplicateAction = async (action: 'merge' | 'separate' | 'skip') => {
+    if (!showDuplicate || !duplicateMatch) {
+      setShowDuplicate(null);
+      return;
+    }
+
+    if (action === 'merge') {
+      const newQty = duplicateMatch.quantity + showDuplicate.quantity;
+      setItems(prev => prev.map(i => i.id === duplicateMatch.id ? { ...i, quantity: newQty } : i));
+      await updateItem(duplicateMatch.id, { quantity: newQty });
+      showToast('Quantities merged', 'success');
+    } else if (action === 'separate') {
+      await createItemsFromParsed([showDuplicate]);
+    }
+
+    if (duplicateQueue.length > 0) {
+      const nextDup = duplicateQueue[0];
+      const match = items.find(i => normalizeItemName(i.name) === normalizeItemName(nextDup.name));
+      if (match) {
+        setShowDuplicate(nextDup);
+        setDuplicateMatch(match);
+        setDuplicateQueue(prev => prev.slice(1));
+      } else {
+        await createItemsFromParsed([nextDup]);
+        setDuplicateQueue(prev => prev.slice(1));
+        setShowDuplicate(null);
+        setDuplicateMatch(null);
+      }
+    } else {
+      setShowDuplicate(null);
+      setDuplicateMatch(null);
+    }
+  };
+
+  const handleSaveEdit = async (updates: Partial<ListItem>) => {
+    if (!showEditItem) return;
+    setItems(prev => prev.map(i => i.id === showEditItem.id ? { ...i, ...updates } : i));
+    setShowEditItem(null);
+
+    if (!getOnlineStatus()) {
+      await queueMutation({ type: 'update_item', payload: { id: showEditItem.id, ...updates } });
+      await updateCachedItem(showEditItem.id, updates);
+      return;
+    }
+
+    try {
+      await updateItem(showEditItem.id, updates);
+    } catch {
+      setItems(prev => prev.map(i => i.id === showEditItem.id ? showEditItem : i));
+    }
+  };
+
+  const toggleCategory = (cat: string) => {
+    setCollapsedCategories(prev => {
+      const next = new Set(prev);
+      if (next.has(cat)) next.delete(cat);
+      else next.add(cat);
+      return next;
+    });
+  };
+
+  const formatPrice = (cents: number | null) => {
+    if (!cents) return '';
+    return `$${(cents / 100).toFixed(2)}`;
+  };
+
+  const copyInviteCode = () => {
+    if (list?.invite_code) {
+      navigator.clipboard.writeText(list.invite_code);
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 2000);
+      showToast('Invite code copied', 'success');
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#FAFAF8] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 border-[3px] border-[#E5E5E0] border-t-[#D97706] rounded-full animate-spin" />
+          <p className="text-sm font-medium text-[#6B6B5F]">Loading list...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!list) return null;
+
+  return (
+    <div className="min-h-screen bg-[#FAFAF8] pb-[280px] sm:pb-[240px]">
+      {/* Premium Header */}
+      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-[#E5E5E0]/60">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4 sm:py-5">
+          <div className="flex items-center justify-between gap-4">
+            <button 
+              onClick={() => navigate('/dashboard')} 
+              className="flex items-center gap-3 text-[#1A1A1A] hover:text-[#D97706] transition-colors group shrink-0"
+            >
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl border border-[#E5E5E0] flex items-center justify-center group-hover:border-[#D97706]/30 group-hover:bg-[#D97706]/5 transition-all">
+                <ChevronLeft className="w-5 h-5" />
+              </div>
+              <div className="hidden sm:block min-w-0">
+                <h1 className="text-lg font-semibold tracking-tight truncate max-w-[200px] lg:max-w-xs">{list.name}</h1>
+              </div>
+            </button>
+
+            {/* Mobile title - centered */}
+            <div className="sm:hidden flex-1 text-center min-w-0">
+              <h1 className="text-base font-semibold tracking-tight truncate">{list.name}</h1>
+            </div>
+
+            <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+              <div className="hidden sm:flex bg-[#F5F5F0] rounded-xl p-1 border border-[#E5E5E0]/60">
+                {([
+                  { mode: 'compact' as LayoutMode, icon: LayoutGrid, label: 'Compact' },
+                  { mode: 'standard' as LayoutMode, icon: LayoutList, label: 'Standard' },
+                  { mode: 'visual' as LayoutMode, icon: Columns3, label: 'Visual' },
+                ]).map(({ mode, icon: Icon }) => (
+                  <button
+                    key={mode}
+                    onClick={() => setLayoutMode(mode)}
+                    className={`p-2 rounded-lg transition-all duration-200 ${
+                      layoutMode === mode 
+                        ? 'bg-white text-[#D97706] shadow-sm border border-[#E5E5E0]' 
+                        : 'text-[#9CA3AF] hover:text-[#6B6B5F]'
+                    }`}
+                    title={mode}
+                  >
+                    <Icon className="w-4 h-4" />
+                  </button>
+                ))}
+              </div>
+
+              <button 
+                onClick={() => setShowSettings(true)} 
+                className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl border border-[#E5E5E0] flex items-center justify-center text-[#6B6B5F] hover:text-[#1A1A1A] hover:border-[#1A1A1A]/20 transition-all"
+              >
+                <Settings className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+
+              <button 
+                onClick={() => setShowShare(true)} 
+                className="h-9 sm:h-10 px-4 bg-[#1A1A1A] text-white rounded-xl flex items-center gap-2 text-sm font-medium hover:bg-[#333] active:scale-95 transition-all"
+              >
+                <Share2 className="w-4 h-4" />
+                <span className="hidden sm:inline">Share</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Mobile layout toggle */}
+          <div className="sm:hidden flex justify-center mt-3">
+            <div className="flex bg-[#F5F5F0] rounded-xl p-1 border border-[#E5E5E0]/60">
+              {([
+                { mode: 'compact' as LayoutMode, icon: LayoutGrid },
+                { mode: 'standard' as LayoutMode, icon: LayoutList },
+                { mode: 'visual' as LayoutMode, icon: Columns3 },
+              ]).map(({ mode, icon: Icon }) => (
+                <button
+                  key={mode}
+                  onClick={() => setLayoutMode(mode)}
+                  className={`p-2 rounded-lg transition-all duration-200 ${
+                    layoutMode === mode 
+                      ? 'bg-white text-[#D97706] shadow-sm border border-[#E5E5E0]' 
+                      : 'text-[#9CA3AF]'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Progress Bar */}
+      {totalCount > 0 && (
+        <div className="bg-white border-b border-[#E5E5E0]/60">
+          <div className="max-w-3xl mx-auto px-4 sm:px-6 py-3">
+            <div className="flex items-center gap-3">
+              <div className="flex-1 h-2 bg-[#F5F5F0] rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-[#D97706] rounded-full transition-all duration-700 ease-out"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <span className="text-xs font-semibold text-[#6B6B5F] tabular-nums">
+                {checkedCount}/{totalCount}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main Content */}
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8">
+        {items.length === 0 ? (
+          <div className="text-center py-20 sm:py-32">
+            <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-[#F5F5F0] flex items-center justify-center mx-auto mb-6">
+              <ClipboardList className="w-10 h-10 sm:w-12 sm:h-12 text-[#C4C4BC]" />
+            </div>
+            <h3 className="text-xl sm:text-2xl font-semibold text-[#1A1A1A] tracking-tight mb-2">Start your list</h3>
+            <p className="text-sm text-[#6B6B5F] max-w-xs mx-auto leading-relaxed">
+              Add items below. Try typing "3 apples, milk, sourdough bread"
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-8 sm:space-y-10">
+            {Object.entries(groupedItems).map(([category, catItems]) => {
+              const colors = CATEGORY_COLORS[category] || CATEGORY_COLORS.Other;
+              const CatIcon = CATEGORY_ICONS[category] || CATEGORY_ICONS.Other;
+              const isCollapsed = collapsedCategories.has(category);
+              const checkedInCat = catItems.filter(i => i.is_checked).length;
+
+              return (
+                <div key={category} className="category-section">
+                  <button
+                    onClick={() => toggleCategory(category)}
+                    className="w-full flex items-center justify-between mb-3 sm:mb-4 group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-8 h-8 sm:w-9 sm:h-9 rounded-xl ${colors.bg} ${colors.border} border flex items-center justify-center transition-transform group-hover:scale-105`}>
+                        <CatIcon className={`w-4 h-4 sm:w-5 sm:h-5 ${colors.icon}`} />
+                      </div>
+                      <div className="flex items-baseline gap-2">
+                        <span className="text-sm sm:text-base font-semibold text-[#1A1A1A] tracking-tight">{category}</span>
+                        <span className="text-xs text-[#9CA3AF] font-medium">
+                          {checkedInCat}/{catItems.length}
+                        </span>
+                      </div>
+                    </div>
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-300 ${isCollapsed ? 'bg-[#F5F5F0]' : ''}`}>
+                      <ChevronLeft className={`w-4 h-4 text-[#9CA3AF] transition-transform duration-300 ${isCollapsed ? '-rotate-90' : 'rotate-0'}`} />
+                    </div>
+                  </button>
+
+                  {!isCollapsed && (
+                    <div className={layoutMode === 'visual' ? 'grid grid-cols-1 sm:grid-cols-2 gap-3' : 'space-y-2'}>
+                      {catItems.map((item, idx) => (
+                        <div
+                          key={item.id}
+                          onTouchStart={(e) => { 
+                            (e.currentTarget as any)._touchX = e.touches[0].clientX;
+                            (e.currentTarget as any)._touchY = e.touches[0].clientY;
+                          }}
+                          onTouchMove={(e) => {
+                            const diffX = e.touches[0].clientX - (e.currentTarget as any)._touchX;
+                            const diffY = e.touches[0].clientY - (e.currentTarget as any)._touchY;
+                            if (Math.abs(diffX) > Math.abs(diffY) && diffX > 30) {
+                              (e.currentTarget as HTMLElement).style.transform = `translateX(${Math.min(diffX * 0.5, 40)}px)`;
+                            }
+                          }}
+                          onTouchEnd={(e) => {
+                            const diffX = e.changedTouches[0].clientX - (e.currentTarget as any)._touchX;
+                            (e.currentTarget as HTMLElement).style.transform = '';
+                            if (diffX > 70) handleCheck(item);
+                          }}
+                          className={`
+                            group relative cursor-pointer transition-all duration-300 ease-out
+                            ${layoutMode === 'compact' ? 'flex items-center gap-3 py-3 px-3 -mx-3 hover:bg-white rounded-2xl' : 'bg-white rounded-2xl border border-[#E5E5E0]/60 p-4 sm:p-5 hover:shadow-lg hover:shadow-[#1A1A1A]/[0.03] hover:border-[#D97706]/20'}
+                            ${item.is_checked ? 'opacity-40' : ''}
+                            ${activeItemId === item.id ? 'scale-[0.98]' : ''}
+                          `}
+                          onClick={() => handleCheck(item)}
+                          onMouseDown={() => setActiveItemId(item.id)}
+                          onMouseUp={() => setActiveItemId(null)}
+                          onMouseLeave={() => setActiveItemId(null)}
+                        >
+                          {/* Checkbox */}
+                          <div className={`
+                            shrink-0 rounded-xl border-2 flex items-center justify-center transition-all duration-300
+                            ${layoutMode === 'compact' ? 'w-6 h-6' : 'w-7 h-7 sm:w-8 sm:h-8'}
+                            ${item.is_checked 
+                              ? 'bg-[#D97706] border-[#D97706]' 
+                              : 'border-[#E5E5E0] group-hover:border-[#D97706]/40'}
+                          `}>
+                            {item.is_checked && (
+                              <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" strokeWidth={3} />
+                            )}
+                          </div>
+
+                          {/* Visual mode icon */}
+                          {layoutMode === 'visual' && !item.is_checked && (
+                            <div className={`w-10 h-10 sm:w-12 sm:h-12 rounded-xl ${colors.bg} ${colors.border} border flex items-center justify-center shrink-0`}>
+                              <CatIcon className={`w-5 h-5 sm:w-6 sm:h-6 ${colors.icon}`} />
+                            </div>
+                          )}
+
+                          {/* Content */}
+                          <div className="flex-1 min-w-0">
+                            <h4 className={`font-semibold text-[#1A1A1A] tracking-tight truncate ${item.is_checked ? 'line-through text-[#9CA3AF]' : ''} ${layoutMode === 'compact' ? 'text-sm sm:text-base' : 'text-base sm:text-lg'}`}>
+                              {item.name}
+                            </h4>
+                            {item.notes && layoutMode !== 'compact' && (
+                              <p className="text-xs text-[#9CA3AF] mt-1 truncate">{item.notes}</p>
+                            )}
+                          </div>
+
+                          {/* Meta */}
+                          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                            {item.quantity > 1 && (
+                              <span className="px-2.5 py-1 rounded-lg bg-[#F5F5F0] text-[#6B6B5F] text-xs font-semibold">
+                                {item.quantity}{item.unit ? ` ${item.unit}` : ''}
+                              </span>
+                            )}
+                            {item.estimated_price_cents && (
+                              <span className="font-semibold text-[#D97706] text-sm sm:text-base tabular-nums">
+                                {formatPrice(item.estimated_price_cents)}
+                              </span>
+                            )}
+
+                            {/* Actions - desktop hover */}
+                            <div className="hidden sm:flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); setShowEditItem(item); }} 
+                                className="p-2 rounded-lg hover:bg-[#F5F5F0] text-[#9CA3AF] hover:text-[#1A1A1A] transition-colors"
+                              >
+                                <Edit3 className="w-4 h-4" />
+                              </button>
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); handleDelete(item); }} 
+                                className="p-2 rounded-lg hover:bg-red-50 text-[#9CA3AF] hover:text-red-500 transition-colors"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+
+                            {/* Mobile actions menu */}
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); setShowEditItem(item); }}
+                              className="sm:hidden p-2 text-[#C4C4BC]"
+                            >
+                              <MoreHorizontal className="w-5 h-5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Premium Floating Input Bar */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-xl border-t border-[#E5E5E0]/60">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4 sm:py-5">
+          {/* Progress & Total */}
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="h-1.5 w-24 sm:w-32 bg-[#F5F5F0] rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-[#D97706] rounded-full transition-all duration-700" 
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-[#9CA3AF]">
+                {checkedCount} of {totalCount} done
+              </span>
+            </div>
+            <div className="flex items-baseline gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-[#9CA3AF]">Total</span>
+              <span className="text-xl sm:text-2xl font-bold text-[#1A1A1A] tracking-tight tabular-nums">
+                ${(runningTotal / 100).toFixed(2)}
+              </span>
+            </div>
+          </div>
+
+          {/* Input */}
+          <div className="flex items-center gap-3">
+            <div className="flex-1 relative">
+              <div className={`absolute left-4 top-1/2 -translate-y-1/2 transition-colors duration-200 ${isInputFocused ? 'text-[#D97706]' : 'text-[#C4C4BC]'}`}>
+                <Plus className="w-5 h-5" />
+              </div>
+              <input
+                ref={inputRef}
+                type="text"
+                value={inputText}
+                onChange={e => setInputText(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleAddItems(); }}
+                onFocus={() => setIsInputFocused(true)}
+                onBlur={() => setIsInputFocused(false)}
+                placeholder="Add items: 3 apples, milk, bread..."
+                className="w-full bg-[#F5F5F0] rounded-2xl pl-12 pr-4 py-3.5 sm:py-4 text-sm sm:text-base font-medium text-[#1A1A1A] placeholder:text-[#C4C4BC] focus:bg-white focus:ring-2 focus:ring-[#D97706]/20 focus:outline-none transition-all duration-200"
+              />
+            </div>
+            <button 
+              onClick={handleAddItems} 
+              disabled={!inputText.trim()}
+              className="h-12 w-12 sm:h-14 sm:w-14 rounded-2xl bg-[#1A1A1A] text-white flex items-center justify-center hover:bg-[#333] active:scale-95 transition-all disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+            >
+              <ArrowRight className="w-5 h-5 sm:w-6 sm:h-6" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Share Modal */}
+      {showShare && (
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-6 bg-[#1A1A1A]/30 backdrop-blur-sm" onClick={() => setShowShare(false)}>
+          <div 
+            className="bg-white w-full sm:w-auto sm:min-w-[420px] sm:rounded-3xl rounded-t-3xl p-6 sm:p-8 shadow-2xl shadow-[#1A1A1A]/10"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl sm:text-2xl font-semibold text-[#1A1A1A] tracking-tight">Share List</h2>
+              <button 
+                onClick={() => setShowShare(false)} 
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#F5F5F0] transition-colors"
+              >
+                <X className="w-5 h-5 text-[#6B6B5F]" />
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              {/* Invite Code */}
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF] block mb-2">Invite Code</label>
+                <div className="bg-[#F5F5F0] rounded-2xl p-5 sm:p-6 text-center border border-[#E5E5E0]">
+                  <span className="text-3xl sm:text-4xl font-bold text-[#1A1A1A] tracking-[0.25em] font-mono">{list.invite_code}</span>
+                </div>
+                <button 
+                  onClick={copyInviteCode}
+                  className="w-full mt-3 h-12 bg-[#1A1A1A] text-white rounded-xl font-medium text-sm hover:bg-[#333] active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+                >
+                  {copiedCode ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  {copiedCode ? 'Copied!' : 'Copy Invite Code'}
+                </button>
+              </div>
+
+              {/* Share Link */}
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF] block mb-2">Or share link</label>
+                <button 
+                  onClick={() => {
+                    const url = `${window.location.origin}/l/${list.share_token}`;
+                    navigator.clipboard.writeText(url);
+                    showToast('Link copied to clipboard', 'success');
+                  }}
+                  className="w-full h-12 border border-[#E5E5E0] rounded-xl font-medium text-sm text-[#6B6B5F] hover:border-[#1A1A1A]/30 hover:bg-[#F5F5F0] transition-all flex items-center justify-center gap-2"
+                >
+                  <Link2 className="w-4 h-4" />
+                  Copy View-Only Link
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-6 bg-[#1A1A1A]/30 backdrop-blur-sm" onClick={() => setShowSettings(false)}>
+          <div 
+            className="bg-white w-full sm:w-auto sm:min-w-[420px] sm:rounded-3xl rounded-t-3xl p-6 sm:p-8 shadow-2xl shadow-[#1A1A1A]/10"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl sm:text-2xl font-semibold text-[#1A1A1A] tracking-tight">List Settings</h2>
+              <button 
+                onClick={() => setShowSettings(false)} 
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#F5F5F0] transition-colors"
+              >
+                <X className="w-5 h-5 text-[#6B6B5F]" />
+              </button>
+            </div>
+            <ListSettingsForm
+              list={list}
+              onSave={(updates) => { handleUpdateList(updates); setShowSettings(false); }}
+              onClose={() => setShowSettings(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Edit Item Modal */}
+      {showEditItem && (
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-6 bg-[#1A1A1A]/30 backdrop-blur-sm" onClick={() => setShowEditItem(null)}>
+          <div 
+            className="bg-white w-full sm:w-auto sm:min-w-[420px] sm:rounded-3xl rounded-t-3xl p-6 sm:p-8 shadow-2xl shadow-[#1A1A1A]/10"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl sm:text-2xl font-semibold text-[#1A1A1A] tracking-tight">Edit Item</h2>
+              <button 
+                onClick={() => setShowEditItem(null)} 
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#F5F5F0] transition-colors"
+              >
+                <X className="w-5 h-5 text-[#6B6B5F]" />
+              </button>
+            </div>
+            <EditItemForm
+              item={showEditItem}
+              onSave={handleSaveEdit}
+              onDelete={handleDelete}
+              onClose={() => setShowEditItem(null)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Duplicate Modal */}
+      {showDuplicate && duplicateMatch && (
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-6 bg-[#1A1A1A]/30 backdrop-blur-sm" onClick={() => setShowDuplicate(null)}>
+          <div 
+            className="bg-white w-full sm:w-auto sm:max-w-sm sm:rounded-3xl rounded-t-3xl p-6 sm:p-8 shadow-2xl shadow-[#1A1A1A]/10 text-center"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="w-14 h-14 rounded-2xl bg-amber-50 flex items-center justify-center mx-auto mb-5">
+              <AlertTriangle className="w-7 h-7 text-[#D97706]" />
+            </div>
+            <h2 className="text-xl font-semibold text-[#1A1A1A] tracking-tight mb-2">Already in list</h2>
+            <p className="text-sm text-[#6B6B5F] mb-8 leading-relaxed">
+              "{showDuplicate.name}" is already in your {duplicateMatch.category} category.
+            </p>
+            <div className="space-y-3">
+              <button 
+                onClick={() => handleDuplicateAction('merge')} 
+                className="w-full h-12 bg-[#1A1A1A] text-white rounded-xl font-medium text-sm hover:bg-[#333] active:scale-[0.98] transition-all"
+              >
+                Merge quantities ({duplicateMatch.quantity} + {showDuplicate.quantity} = {duplicateMatch.quantity + showDuplicate.quantity})
+              </button>
+              <button 
+                onClick={() => handleDuplicateAction('separate')} 
+                className="w-full h-12 border border-[#E5E5E0] rounded-xl font-medium text-sm text-[#6B6B5F] hover:bg-[#F5F5F0] transition-all"
+              >
+                Add as separate item
+              </button>
+              <button 
+                onClick={() => handleDuplicateAction('skip')} 
+                className="w-full h-10 text-[#9CA3AF] font-medium text-sm hover:text-[#6B6B5F] transition-colors"
+              >
+                Skip
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Settings Form
+function ListSettingsForm({ list, onSave, onClose }: {
+  list: ShoppingList;
+  onSave: (updates: Partial<ShoppingList>) => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(list.name);
+  const [privacy, setPrivacy] = useState(list.privacy);
+
+  const privacyOptions = [
+    { value: 'private', label: 'Private', desc: 'Only you can access' },
+    { value: 'invite_only', label: 'Invite Only', desc: 'People with the code can edit' },
+    { value: 'link_sharing', label: 'Link Sharing', desc: 'Anyone with the link can view' },
+  ];
+
+  return (
+    <form onSubmit={(e) => { e.preventDefault(); onSave({ name: name.trim(), privacy }); }} className="space-y-6">
+      <div>
+        <label className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF] block mb-2">List Name</label>
+        <input 
+          type="text" 
+          value={name} 
+          onChange={e => setName(e.target.value)} 
+          className="w-full bg-[#F5F5F0] rounded-xl px-4 py-3.5 text-sm font-medium text-[#1A1A1A] focus:bg-white focus:ring-2 focus:ring-[#D97706]/20 focus:outline-none transition-all"
+        />
+      </div>
+
+      <div>
+        <label className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF] block mb-3">Privacy</label>
+        <div className="space-y-2">
+          {privacyOptions.map(opt => (
+            <button
+              key={opt.value}
+              type="button"
+              onClick={() => setPrivacy(opt.value as any)}
+              className={`w-full flex items-center gap-3 p-4 rounded-xl border transition-all text-left ${
+                privacy === opt.value 
+                  ? 'border-[#D97706] bg-[#D97706]/5' 
+                  : 'border-[#E5E5E0] hover:border-[#1A1A1A]/20'
+              }`}
+            >
+              <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                privacy === opt.value ? 'border-[#D97706]' : 'border-[#E5E5E0]'
+              }`}>
+                {privacy === opt.value && <div className="w-2.5 h-2.5 rounded-full bg-[#D97706]" />}
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-[#1A1A1A]">{opt.label}</p>
+                <p className="text-xs text-[#9CA3AF]">{opt.desc}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex gap-3 pt-2">
+        <button type="button" onClick={onClose} className="flex-1 h-12 border border-[#E5E5E0] rounded-xl font-medium text-sm text-[#6B6B5F] hover:bg-[#F5F5F0] transition-all">
+          Cancel
+        </button>
+        <button type="submit" className="flex-1 h-12 bg-[#1A1A1A] text-white rounded-xl font-medium text-sm hover:bg-[#333] active:scale-[0.98] transition-all">
+          Save Changes
+        </button>
+      </div>
+    </form>
+  );
+}
+
+// Edit Item Form
+function EditItemForm({ item, onSave, onDelete, onClose }: {
+  item: ListItem;
+  onSave: (updates: Partial<ListItem>) => void;
+  onDelete: (item: ListItem) => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(item.name);
+  const [quantity, setQuantity] = useState(item.quantity.toString());
+  const unit = item.unit || '';
+  const category = item.category;
+  const [price, setPrice] = useState(item.estimated_price_cents ? (item.estimated_price_cents / 100).toFixed(2) : '');
+  const [notes, setNotes] = useState(item.notes || '');
+
+  return (
+    <form onSubmit={(e) => {
+      e.preventDefault();
+      onSave({
+        name: name.trim(),
+        quantity: parseFloat(quantity) || 1,
+        unit: unit || null,
+        category: category.trim(),
+        estimated_price_cents: price ? Math.round(parseFloat(price) * 100) : null,
+        notes: notes.trim() || null,
+      });
+    }} className="space-y-5">
+      <div>
+        <label className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF] block mb-2">Item Name</label>
+        <input 
+          type="text" 
+          value={name} 
+          onChange={e => setName(e.target.value)} 
+          className="w-full bg-[#F5F5F0] rounded-xl px-4 py-3.5 text-base font-semibold text-[#1A1A1A] focus:bg-white focus:ring-2 focus:ring-[#D97706]/20 focus:outline-none transition-all"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF] block mb-2">Quantity</label>
+          <input 
+            type="number" 
+            value={quantity} 
+            onChange={e => setQuantity(e.target.value)} 
+            className="w-full bg-[#F5F5F0] rounded-xl px-4 py-3.5 text-sm font-medium text-[#1A1A1A] focus:bg-white focus:ring-2 focus:ring-[#D97706]/20 focus:outline-none transition-all"
+          />
+        </div>
+        <div>
+          <label className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF] block mb-2">Price ($)</label>
+          <input 
+            type="number" 
+            step="0.01"
+            value={price} 
+            onChange={e => setPrice(e.target.value)} 
+            className="w-full bg-[#F5F5F0] rounded-xl px-4 py-3.5 text-sm font-medium text-[#1A1A1A] focus:bg-white focus:ring-2 focus:ring-[#D97706]/20 focus:outline-none transition-all"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF] block mb-2">Notes</label>
+        <textarea 
+          value={notes} 
+          onChange={e => setNotes(e.target.value)} 
+          className="w-full bg-[#F5F5F0] rounded-xl px-4 py-3.5 text-sm text-[#1A1A1A] placeholder:text-[#C4C4BC] focus:bg-white focus:ring-2 focus:ring-[#D97706]/20 focus:outline-none transition-all min-h-[100px] resize-none"
+          placeholder="Add context..."
+        />
+      </div>
+
+      <div className="flex gap-3 pt-2">
+        <button 
+          type="button" 
+          onClick={() => { onDelete(item); onClose(); }} 
+          className="w-14 h-14 rounded-xl bg-red-50 text-red-500 flex items-center justify-center hover:bg-red-100 transition-colors shrink-0"
+        >
+          <Trash2 className="w-5 h-5" />
+        </button>
+        <button 
+          type="submit" 
+          className="flex-1 h-14 bg-[#1A1A1A] text-white rounded-xl font-medium text-sm hover:bg-[#333] active:scale-[0.98] transition-all"
+        >
+          Update Item
+        </button>
+      </div>
+    </form>
+  );
+}
+
+
+================================================================================
+FILE: src/pages/DashboardPage.tsx
+================================================================================
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router';
+import { ShoppingCart, ChevronRight, Lock, Users, Globe, X, Plus, LogIn, Search, MoreHorizontal, Trash2, Edit3, CheckCircle2 } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
+import { getUserLists, createList, joinListByCode } from '@/lib/supabase';
+import type { ShoppingList } from '@/lib/supabase';
+import { cacheLists, getCachedLists } from '@/lib/db';
+import { formatDistanceToNow } from 'date-fns';
+
+type PrivacySetting = 'private' | 'invite_only' | 'link_sharing';
+
+const PRIVACY_CONFIGS: Record<PrivacySetting, { icon: typeof Lock; label: string; color: string; bg: string }> = {
+  private:       { icon: Lock,  label: 'Private',      color: 'text-slate-600', bg: 'bg-slate-50' },
+  invite_only:   { icon: Users, label: 'Invite only',  color: 'text-amber-700', bg: 'bg-amber-50' },
+  link_sharing:  { icon: Globe, label: 'Link sharing', color: 'text-emerald-700', bg: 'bg-emerald-50' },
+};
+
+export default function DashboardPage() {
+  const navigate = useNavigate();
+  const { trialDaysLeft, subscriptionStatus } = useAuth();
+  const { showToast } = useToast();
+  const [lists, setLists] = useState<ShoppingList[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [modal, setModal] = useState<'create' | 'join' | null>(null);
+  const [newListName, setNewListName] = useState('');
+  const [newListPrivacy, setNewListPrivacy] = useState<PrivacySetting>('invite_only');
+  const [inviteCode, setInviteCode] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [joining, setJoining] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const fetchLists = useCallback(async () => {
+    try {
+      const data = await getUserLists();
+      if (data && data.length > 0) {
+        setLists(data);
+        await cacheLists(data);
+      } else {
+        const cached = await getCachedLists();
+        setLists(cached);
+      }
+    } catch {
+      const cached = await getCachedLists();
+      setLists(cached);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchLists();
+    const handleShowCreate = () => setModal('create');
+    window.addEventListener('showCreateList', handleShowCreate);
+    return () => window.removeEventListener('showCreateList', handleShowCreate);
+  }, [fetchLists]);
+
+  const closeModal = () => {
+    setModal(null);
+    setNewListName('');
+    setInviteCode('');
+  };
+
+  const handleCreateList = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newListName.trim()) return;
+    setCreating(true);
+    try {
+      const list = await createList(newListName.trim(), newListPrivacy);
+      showToast('List created', 'success');
+      closeModal();
+      navigate(`/list/${list.id}`);
+    } catch (err: any) {
+      showToast(err?.message || 'Failed to create list', 'error');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleJoinList = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (inviteCode.length !== 6) {
+      showToast('Invite code must be 6 characters', 'error');
+      return;
+    }
+    setJoining(true);
+    try {
+      const listId = await joinListByCode(inviteCode.toUpperCase());
+      showToast('Joined list!', 'success');
+      closeModal();
+      await fetchLists();
+      navigate(`/list/${listId}`);
+    } catch (err: any) {
+      showToast(err?.message || 'Invalid invite code', 'error');
+    } finally {
+      setJoining(false);
+    }
+  };
+
+  const filteredLists = lists.filter(list => 
+    list.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  return (
+    <div className="min-h-screen bg-[#FAFAF8]">
+      {/* Premium Header */}
+      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-[#E5E5E0]/60">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4 sm:py-5">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h1 className="text-xl sm:text-2xl font-semibold text-[#1A1A1A] tracking-tight">My lists</h1>
+              <p className="text-xs text-[#9CA3AF] font-medium mt-0.5">
+                {lists.length} {lists.length === 1 ? 'list' : 'lists'}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 sm:gap-3">
+              <button 
+                onClick={() => setModal('join')} 
+                className="flex items-center gap-2 px-3 sm:px-4 py-2.5 rounded-xl border border-[#E5E5E0] text-sm font-medium text-[#6B6B5F] hover:bg-[#F5F5F0] hover:text-[#1A1A1A] transition-all active:scale-95"
+              >
+                <LogIn className="w-4 h-4" />
+                <span className="hidden sm:inline">Join</span>
+              </button>
+              <button 
+                onClick={() => setModal('create')} 
+                className="flex items-center gap-2 h-10 sm:h-11 px-4 bg-[#1A1A1A] text-white rounded-xl text-sm font-medium hover:bg-[#333] active:scale-95 transition-all"
+              >
+                <Plus className="w-4 h-4" />
+                <span className="hidden sm:inline">New list</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Search */}
+          {lists.length > 3 && (
+            <div className="mt-4 relative">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#C4C4BC]" />
+              <input
+                type="text"
+                placeholder="Search lists..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="w-full bg-[#F5F5F0] rounded-xl pl-10 pr-4 py-2.5 text-sm text-[#1A1A1A] placeholder:text-[#C4C4BC] focus:bg-white focus:ring-2 focus:ring-[#D97706]/20 focus:outline-none transition-all"
+              />
+            </div>
+          )}
+        </div>
+      </header>
+
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+        {/* Trial banner */}
+        {subscriptionStatus === 'trialing' && trialDaysLeft > 0 && (
+          <div className="flex items-center justify-between gap-4 bg-amber-50 border border-amber-200/60 rounded-2xl px-5 py-4">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
+                <CheckCircle2 className="w-4 h-4 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-amber-800">Trial active</p>
+                <p className="text-xs text-amber-600/70">{trialDaysLeft} day{trialDaysLeft !== 1 ? 's' : ''} remaining</p>
+              </div>
+            </div>
+            <button className="px-4 py-2 rounded-xl bg-[#D97706] text-white text-xs font-semibold hover:bg-[#B45309] active:scale-95 transition-all shrink-0">
+              Upgrade
+            </button>
+          </div>
+        )}
+
+        {/* Lists */}
+        {loading ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="h-20 sm:h-24 rounded-2xl bg-[#F5F5F0] animate-pulse" />
+            ))}
+          </div>
+        ) : filteredLists.length === 0 ? (
+          <div className="text-center py-16 sm:py-24">
+            <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-3xl bg-[#F5F5F0] flex items-center justify-center mx-auto mb-6">
+              <ShoppingCart className="w-10 h-10 sm:w-12 sm:h-12 text-[#C4C4BC]" />
+            </div>
+            <h3 className="text-xl sm:text-2xl font-semibold text-[#1A1A1A] tracking-tight mb-2">
+              {searchQuery ? 'No lists found' : 'No lists yet'}
+            </h3>
+            <p className="text-sm text-[#6B6B5F] mb-8 max-w-xs mx-auto leading-relaxed">
+              {searchQuery ? 'Try a different search term' : 'Create your first list or join one with an invite code.'}
+            </p>
+            {!searchQuery && (
+              <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+                <button onClick={() => setModal('create')} className="h-12 px-8 bg-[#1A1A1A] text-white rounded-xl text-sm font-medium hover:bg-[#333] active:scale-95 transition-all">
+                  Create a list
+                </button>
+                <button onClick={() => setModal('join')} className="h-12 px-8 border border-[#E5E5E0] rounded-xl text-sm font-medium text-[#6B6B5F] hover:bg-[#F5F5F0] hover:text-[#1A1A1A] transition-all">
+                  Join with code
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {filteredLists.map(list => {
+              const priv = PRIVACY_CONFIGS[(list.privacy as PrivacySetting)] || PRIVACY_CONFIGS.private;
+              const PrivacyIcon = priv.icon;
+              const itemCount = (list as any).items?.count ?? 0;
+
+              return (
+                <button
+                  key={list.id}
+                  onClick={() => navigate(`/list/${list.id}`)}
+                  className="group w-full bg-white rounded-2xl border border-[#E5E5E0]/60 px-5 py-4 sm:px-6 sm:py-5 flex items-center gap-4 text-left hover:border-[#D97706]/30 hover:shadow-lg hover:shadow-[#1A1A1A]/[0.03] active:scale-[0.995] transition-all duration-200"
+                >
+                  <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-[#F5F5F0] flex items-center justify-center shrink-0 group-hover:bg-[#D97706]/5 transition-colors">
+                    <ShoppingCart className="w-5 h-5 sm:w-6 sm:h-6 text-[#9CA3AF] group-hover:text-[#D97706] transition-colors" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h3 className="font-semibold text-[#1A1A1A] truncate text-sm sm:text-base">{list.name}</h3>
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-semibold uppercase tracking-wider shrink-0 ${priv.bg} ${priv.color}`}>
+                        <PrivacyIcon className="w-2.5 h-2.5" />
+                        {priv.label}
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#9CA3AF] font-medium">
+                      {itemCount} {itemCount === 1 ? 'item' : 'items'} · Updated {formatDistanceToNow(new Date(list.updated_at), { addSuffix: true })}
+                    </p>
+                  </div>
+                  <ChevronRight className="w-4 h-4 sm:w-5 sm:h-5 text-[#C4C4BC] group-hover:text-[#D97706] group-hover:translate-x-0.5 transition-all shrink-0" />
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Modal - Mobile optimized */}
+      {modal && (
+        <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-[#1A1A1A]/30 backdrop-blur-sm" onClick={closeModal}>
+          <div 
+            className="bg-white w-full sm:w-auto sm:min-w-[420px] sm:max-w-lg sm:rounded-3xl rounded-t-3xl p-6 sm:p-8 shadow-2xl shadow-[#1A1A1A]/10 max-h-[90vh] overflow-y-auto"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-xl sm:text-2xl font-semibold text-[#1A1A1A] tracking-tight">
+                {modal === 'create' ? 'New list' : 'Join a list'}
+              </h2>
+              <button 
+                onClick={closeModal} 
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-[#F5F5F0] transition-colors"
+              >
+                <X className="w-5 h-5 text-[#6B6B5F]" />
+              </button>
+            </div>
+
+            {modal === 'create' && (
+              <form onSubmit={handleCreateList} className="space-y-6">
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF] block mb-2">Name</label>
+                  <input
+                    type="text"
+                    placeholder="e.g., Weekly groceries"
+                    value={newListName}
+                    onChange={e => setNewListName(e.target.value)}
+                    className="w-full bg-[#F5F5F0] rounded-xl px-4 py-3.5 text-sm font-medium text-[#1A1A1A] placeholder:text-[#C4C4BC] focus:bg-white focus:ring-2 focus:ring-[#D97706]/20 focus:outline-none transition-all"
+                    autoFocus
+                  />
+                </div>
+
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF] block mb-3">Privacy</label>
+                  <div className="space-y-2">
+                    {(['private', 'invite_only', 'link_sharing'] as const).map(value => {
+                      const cfg = PRIVACY_CONFIGS[value];
+                      const Icon = cfg.icon;
+                      const isSelected = newListPrivacy === value;
+                      const descriptions: Record<PrivacySetting, string> = {
+                        private: 'Only you can see this list',
+                        invite_only: 'Share a 6-digit code with collaborators',
+                        link_sharing: 'Anyone with the link can view it',
+                      };
+                      return (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setNewListPrivacy(value)}
+                          className={`w-full flex items-center gap-4 p-4 rounded-xl border transition-all duration-200 text-left ${
+                            isSelected
+                              ? 'border-[#D97706] bg-[#D97706]/[0.03]'
+                              : 'border-[#E5E5E0] hover:border-[#1A1A1A]/20'
+                          }`}
+                        >
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 transition-all ${
+                            isSelected ? 'bg-[#D97706]' : 'bg-[#F5F5F0]'
+                          }`}>
+                            <Icon className={`w-4 h-4 ${isSelected ? 'text-white' : 'text-[#9CA3AF]'}`} />
+                          </div>
+                          <div className="flex-1">
+                            <p className="text-sm font-semibold text-[#1A1A1A]">{cfg.label}</p>
+                            <p className="text-xs text-[#9CA3AF] mt-0.5">{descriptions[value]}</p>
+                          </div>
+                          <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                            isSelected ? 'border-[#D97706]' : 'border-[#E5E5E0]'
+                          }`}>
+                            {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-[#D97706]" />}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <button 
+                  type="submit" 
+                  disabled={!newListName.trim() || creating} 
+                  className="w-full h-12 bg-[#1A1A1A] text-white rounded-xl font-medium text-sm hover:bg-[#333] active:scale-[0.98] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {creating ? 'Creating...' : 'Create list'}
+                </button>
+              </form>
+            )}
+
+            {modal === 'join' && (
+              <form onSubmit={handleJoinList} className="space-y-6">
+                <div>
+                  <label className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF] block mb-2">Invite Code</label>
+                  <input
+                    type="text"
+                    placeholder="e.g., K7MN2P"
+                    maxLength={6}
+                    value={inviteCode}
+                    onChange={e => setInviteCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))}
+                    className="w-full bg-[#F5F5F0] rounded-xl border-2 border-dashed border-[#E5E5E0] p-6 text-center text-3xl sm:text-4xl font-bold tracking-[0.3em] text-[#1A1A1A] focus:border-[#D97706] focus:bg-white focus:outline-none transition-all font-mono"
+                    autoFocus
+                  />
+                  <p className="text-xs text-[#9CA3AF] text-center mt-3">Enter the 6-character code from the list owner</p>
+                </div>
+                <button 
+                  type="submit" 
+                  disabled={inviteCode.length !== 6 || joining} 
+                  className="w-full h-12 bg-[#1A1A1A] text-white rounded-xl font-medium text-sm hover:bg-[#333] active:scale-[0.98] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {joining ? 'Joining...' : 'Join list'}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
+================================================================================
+FILE: src/pages/LandingPage.tsx
+================================================================================
+import { useEffect, useState, useRef } from 'react';
+import { useNavigate } from 'react-router';
+import { ShoppingCart, Users, Wifi, CheckCircle2, ArrowRight, Zap, Lock, Globe, ChevronRight, Star, Shield, Sparkles } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+
+const FEATURES = [
+  {
+    icon: Zap,
+    title: 'Natural language input',
+    desc: 'Type "3 apples, 2% milk, bread" — items are parsed and categorised instantly.',
+  },
+  {
+    icon: Users,
+    title: 'Real-time collaboration',
+    desc: 'Your partner checks off milk in the dairy aisle. You see it update before you reach produce.',
+  },
+  {
+    icon: Wifi,
+    title: 'Works offline',
+    desc: 'Bad signal in the store? Changes queue locally and sync the moment you reconnect.',
+  },
+  {
+    icon: CheckCircle2,
+    title: 'Smart categories',
+    desc: 'Items auto-group by aisle — produce, dairy, meat, pantry. Drag to reorder your way.',
+  },
+];
+
+const PLANS = [
+  {
+    name: 'Free trial',
+    price: '5 days',
+    desc: 'Full access. No commitment.',
+    highlight: false,
+    cta: 'Start free trial',
+  },
+  {
+    name: 'Monthly',
+    price: '$4',
+    period: '/mo',
+    desc: 'All features, cancel anytime.',
+    highlight: true,
+    cta: 'Get started',
+  },
+  {
+    name: 'Annual',
+    price: '$36',
+    period: '/yr',
+    desc: 'Save 25% vs monthly.',
+    highlight: false,
+    cta: 'Get started',
+  },
+];
+
+export default function LandingPage() {
+  const navigate = useNavigate();
+  const { isAuthenticated } = useAuth();
+  const [scrolled, setScrolled] = useState(false);
+  const heroRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isAuthenticated) navigate('/dashboard', { replace: true });
+  }, [isAuthenticated, navigate]);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 20);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  return (
+    <div className="bg-[#FAFAF8] min-h-screen selection:bg-[#D97706]/20">
+      {/* Nav */}
+      <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+        scrolled ? 'bg-white/90 backdrop-blur-xl border-b border-[#E5E5E0]/60 py-3' : 'py-5 sm:py-6'
+      }`}>
+        <div className="max-w-5xl mx-auto px-5 sm:px-6 flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-[#1A1A1A] flex items-center justify-center">
+              <ShoppingCart className="w-4 h-4 text-white" />
+            </div>
+            <span className="font-semibold text-[#1A1A1A] tracking-tight text-lg">ListTogether</span>
+          </div>
+          <div className="flex items-center gap-4 sm:gap-6">
+            <button onClick={() => navigate('/login')} className="text-sm font-medium text-[#6B6B5F] hover:text-[#1A1A1A] transition-colors">
+              Sign in
+            </button>
+            <button onClick={() => navigate('/signup')} className="h-9 sm:h-10 px-4 bg-[#1A1A1A] text-white rounded-xl text-sm font-medium hover:bg-[#333] active:scale-95 transition-all">
+              Start free trial
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      {/* Hero */}
+      <section className="pt-28 sm:pt-36 lg:pt-44 pb-16 sm:pb-24 px-5 sm:px-6">
+        <div className="max-w-3xl mx-auto text-center">
+          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#D97706]/10 border border-[#D97706]/20 text-[#D97706] text-xs font-semibold tracking-wide mb-6 sm:mb-8">
+            <Sparkles className="w-3.5 h-3.5" />
+            Real-time household sync
+          </div>
+
+          <h1 className="text-4xl sm:text-5xl lg:text-6xl font-semibold text-[#1A1A1A] leading-[1.1] tracking-tight mb-5 sm:mb-6">
+            Grocery lists<br />
+            <span className="text-[#D97706]">that keep up.</span>
+          </h1>
+
+          <p className="text-base sm:text-lg text-[#6B6B5F] leading-relaxed max-w-xl mx-auto mb-8 sm:mb-10">
+            Shared shopping lists for households. Real-time sync, offline support, natural language input — no faff, just the list.
+          </p>
+
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4">
+            <button onClick={() => navigate('/signup')} className="h-12 sm:h-14 px-8 bg-[#1A1A1A] text-white rounded-2xl text-sm font-medium hover:bg-[#333] active:scale-95 transition-all flex items-center gap-2">
+              Start free trial
+              <ArrowRight className="w-4 h-4" />
+            </button>
+            <button onClick={() => navigate('/login')} className="h-12 sm:h-14 px-6 text-sm font-medium text-[#6B6B5F] hover:text-[#1A1A1A] transition-colors">
+              Already have an account →
+            </button>
+          </div>
+        </div>
+
+        {/* Demo Card */}
+        <div className="max-w-xl mx-auto mt-12 sm:mt-16">
+          <div className="bg-white rounded-3xl border border-[#E5E5E0]/60 shadow-xl shadow-[#1A1A1A]/[0.04] p-5 sm:p-7">
+            <div className="flex items-center gap-2.5 mb-5">
+              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF]">Live — 2 people editing</span>
+            </div>
+            <div className="space-y-2">
+              {[
+                { name: 'Organic whole milk', qty: '2', cat: 'Dairy', checked: true },
+                { name: 'Sourdough bread', qty: '1', cat: 'Bakery', checked: true },
+                { name: 'Cherry tomatoes', qty: '1 pint', cat: 'Produce', checked: false },
+                { name: 'Cheddar cheese', qty: '200g', cat: 'Dairy', checked: false },
+                { name: 'Chicken thighs', qty: '1 kg', cat: 'Meat', checked: false },
+              ].map((item, i) => (
+                <div key={i} className={`flex items-center gap-3 py-2.5 px-3 rounded-xl transition-colors ${item.checked ? 'opacity-40' : 'hover:bg-[#F5F5F0]'}`}>
+                  <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all ${
+                    item.checked ? 'bg-[#D97706] border-[#D97706]' : 'border-[#E5E5E0]'
+                  }`}>
+                    {item.checked && <CheckCircle2 className="w-3 h-3 text-white" />}
+                  </div>
+                  <span className={`flex-1 font-medium text-sm text-[#1A1A1A] ${item.checked ? 'line-through text-[#9CA3AF]' : ''}`}>{item.name}</span>
+                  <span className="text-xs font-semibold text-[#9CA3AF] bg-[#F5F5F0] px-2 py-0.5 rounded-md">{item.qty}</span>
+                  <span className="text-xs text-[#C4C4BC]">{item.cat}</span>
+                </div>
+              ))}
+            </div>
+            <div className="mt-5 pt-4 border-t border-[#E5E5E0]/60 flex items-center justify-between">
+              <span className="text-xs text-[#9CA3AF] font-medium">2 of 5 items checked</span>
+              <span className="text-lg font-semibold text-[#1A1A1A]">Est. $28.40</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Features */}
+      <section className="py-16 sm:py-24 px-5 sm:px-6 bg-white border-y border-[#E5E5E0]/60">
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-12 sm:mb-16">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF] mb-3">What&apos;s included</p>
+            <h2 className="text-2xl sm:text-3xl lg:text-4xl font-semibold text-[#1A1A1A] tracking-tight">
+              Everything a household actually needs.
+            </h2>
+          </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
+            {FEATURES.map((feat, i) => (
+              <div key={i} className="group">
+                <div className="w-10 h-10 rounded-xl bg-[#D97706]/10 flex items-center justify-center mb-4 group-hover:bg-[#D97706]/15 transition-colors">
+                  <feat.icon className="w-5 h-5 text-[#D97706]" />
+                </div>
+                <h3 className="text-base font-semibold text-[#1A1A1A] mb-1.5">{feat.title}</h3>
+                <p className="text-sm text-[#6B6B5F] leading-relaxed">{feat.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Sharing Section */}
+      <section className="py-16 sm:py-24 px-5 sm:px-6">
+        <div className="max-w-5xl mx-auto grid lg:grid-cols-2 gap-10 sm:gap-16 items-center">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF] mb-3">Sharing</p>
+            <h2 className="text-2xl sm:text-3xl font-semibold text-[#1A1A1A] tracking-tight mb-6">
+              Three ways to share a list.
+            </h2>
+            <div className="space-y-5">
+              {[
+                { icon: Lock, label: 'Private', desc: 'Only you can see it.' },
+                { icon: Users, label: 'Invite code', desc: 'Share a 6-digit code with anyone you trust. They edit in real time alongside you.' },
+                { icon: Globe, label: 'View-only link', desc: 'Anyone with the link can read the list — no sign-up required.' },
+              ].map((item, i) => (
+                <div key={i} className="flex items-start gap-4">
+                  <div className="w-10 h-10 rounded-xl bg-[#F5F5F0] flex items-center justify-center shrink-0 mt-0.5">
+                    <item.icon className="w-4.5 h-4.5 text-[#1A1A1A]" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-[#1A1A1A] text-sm">{item.label}</p>
+                    <p className="text-sm text-[#6B6B5F] mt-0.5 leading-relaxed">{item.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="bg-white rounded-3xl border border-[#E5E5E0]/60 p-6 sm:p-8 shadow-xl shadow-[#1A1A1A]/[0.03]">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF] mb-5">Invite via code</p>
+            <div className="bg-[#F5F5F0] rounded-2xl p-6 sm:p-8 text-center mb-5">
+              <span className="text-4xl sm:text-5xl font-bold text-[#1A1A1A] tracking-[0.25em] font-mono">K7MN2P</span>
+            </div>
+            <p className="text-sm text-[#6B6B5F] text-center leading-relaxed">Share this code. They enter it, and they&apos;re instantly editing with you — no email invite, no account setup required.</p>
+          </div>
+        </div>
+      </section>
+
+      {/* Pricing */}
+      <section className="py-16 sm:py-24 px-5 sm:px-6 bg-[#1A1A1A]">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-12 sm:mb-16">
+            <p className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF] mb-3">Pricing</p>
+            <h2 className="text-2xl sm:text-3xl font-semibold text-white tracking-tight mb-3">Simple. No tiers.</h2>
+            <p className="text-[#6B6B5F]">One flat price. All features. No ads, no data selling.</p>
+          </div>
+          <div className="grid sm:grid-cols-3 gap-4 sm:gap-6">
+            {PLANS.map((plan, i) => (
+              <div key={i} className={`rounded-2xl p-6 sm:p-8 ${plan.highlight ? 'bg-[#D97706]' : 'bg-white/5 border border-white/10'}`}>
+                <p className={`text-xs font-semibold uppercase tracking-wider mb-4 ${plan.highlight ? 'text-[#D97706]/70' : 'text-[#9CA3AF]'}`}>{plan.name}</p>
+                <div className="flex items-baseline gap-1 mb-2">
+                  <span className={`text-3xl sm:text-4xl font-bold ${plan.highlight ? 'text-white' : 'text-white'}`}>{plan.price}</span>
+                  {plan.period && <span className={`text-sm font-medium ${plan.highlight ? 'text-white/60' : 'text-[#9CA3AF]'}`}>{plan.period}</span>}
+                </div>
+                <p className={`text-sm mb-6 sm:mb-8 ${plan.highlight ? 'text-white/70' : 'text-[#9CA3AF]'}`}>{plan.desc}</p>
+                <button
+                  onClick={() => navigate('/signup')}
+                  className={`w-full h-11 rounded-xl font-medium text-sm transition-all active:scale-95 ${
+                    plan.highlight
+                      ? 'bg-white text-[#1A1A1A] hover:bg-[#F5F5F0]'
+                      : 'bg-white/10 text-white hover:bg-white/20 border border-white/10'
+                  }`}
+                >
+                  {plan.cta}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="py-12 sm:py-16 px-5 sm:px-6 border-t border-[#E5E5E0]/60">
+        <div className="max-w-5xl mx-auto flex flex-col md:flex-row justify-between items-start gap-8 sm:gap-10">
+          <div>
+            <div className="flex items-center gap-2.5 mb-3">
+              <div className="w-7 h-7 rounded-lg bg-[#1A1A1A] flex items-center justify-center">
+                <ShoppingCart className="w-3.5 h-3.5 text-white" />
+              </div>
+              <span className="font-semibold text-[#1A1A1A]">ListTogether</span>
+            </div>
+            <p className="text-sm text-[#6B6B5F] max-w-xs leading-relaxed">Shared shopping lists for households that value their time.</p>
+          </div>
+          <div className="grid grid-cols-2 gap-8 sm:gap-12 text-sm">
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-[#1A1A1A]">Product</p>
+              <button onClick={() => navigate('/signup')} className="block text-[#6B6B5F] hover:text-[#D97706] transition-colors">Sign up</button>
+              <button onClick={() => navigate('/login')} className="block text-[#6B6B5F] hover:text-[#D97706] transition-colors">Sign in</button>
+            </div>
+            <div className="space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-[#1A1A1A]">Legal</p>
+              <button className="block text-[#6B6B5F] hover:text-[#D97706] transition-colors">Privacy</button>
+              <button className="block text-[#6B6B5F] hover:text-[#D97706] transition-colors">Terms</button>
+            </div>
+          </div>
+        </div>
+        <div className="max-w-5xl mx-auto mt-10 sm:mt-12 pt-6 sm:pt-8 border-t border-[#E5E5E0]/60 flex justify-between items-center">
+          <p className="text-xs text-[#9CA3AF]">© 2026 ListTogether</p>
+          <div className="flex items-center gap-1.5">
+            <Shield className="w-3.5 h-3.5 text-[#9CA3AF]" />
+            <span className="text-xs text-[#9CA3AF]">Secure & private</span>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+
+================================================================================
+FILE: src/components/AppShell.tsx
+================================================================================
+import { Outlet, useNavigate, useLocation } from 'react-router';
+import { useAuth } from '@/contexts/AuthContext';
+import { useEffect, useState } from 'react';
+import { ShoppingCart, Settings, Home, Plus, User } from 'lucide-react';
+
+export function AppShell() {
+  const { isAuthenticated, loading } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 640);
+    check();
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  useEffect(() => {
+    if (!loading && !isAuthenticated) {
+      navigate('/login', { replace: true });
+    }
+  }, [isAuthenticated, loading, navigate]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#FAFAF8] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-[3px] border-[#E5E5E0] border-t-[#D97706] rounded-full animate-spin" />
+          <p className="text-sm text-[#9CA3AF] font-medium">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) return null;
+
+  const isActive = (path: string) => {
+    if (path === '/dashboard' && (location.pathname === '/dashboard' || location.pathname.startsWith('/list'))) return true;
+    if (path === '/settings' && location.pathname === '/settings') return true;
+    return false;
+  };
+
+  return (
+    <div className="min-h-screen bg-[#FAFAF8] flex">
+      {/* Desktop sidebar */}
+      <aside className="hidden sm:flex flex-col items-center w-[72px] fixed left-0 top-0 bottom-0 bg-white border-r border-[#E5E5E0]/60 z-50 py-5 gap-1">
+        <button
+          onClick={() => navigate('/dashboard')}
+          className="w-10 h-10 rounded-xl bg-[#1A1A1A] flex items-center justify-center mb-6 hover:bg-[#333] transition-colors"
+        >
+          <ShoppingCart className="w-4 h-4 text-white" />
+        </button>
+
+        <nav className="flex flex-col gap-1">
+          <button
+            onClick={() => navigate('/dashboard')}
+            className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-200 ${
+              isActive('/dashboard') 
+                ? 'bg-[#D97706]/10 text-[#D97706]' 
+                : 'text-[#9CA3AF] hover:text-[#1A1A1A] hover:bg-[#F5F5F0]'
+            }`}
+            title="My lists"
+          >
+            <Home className="w-5 h-5" />
+          </button>
+          <button
+            onClick={() => navigate('/settings')}
+            className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-200 ${
+              isActive('/settings') 
+                ? 'bg-[#D97706]/10 text-[#D97706]' 
+                : 'text-[#9CA3AF] hover:text-[#1A1A1A] hover:bg-[#F5F5F0]'
+            }`}
+            title="Settings"
+          >
+            <Settings className="w-5 h-5" />
+          </button>
+        </nav>
+
+        <div className="mt-auto flex flex-col items-center gap-3">
+          <button
+            onClick={() => {
+              if (location.pathname.startsWith('/list/')) {
+                window.dispatchEvent(new CustomEvent('showCreateItem'));
+              } else {
+                window.dispatchEvent(new CustomEvent('showCreateList'));
+              }
+            }}
+            className="w-11 h-11 rounded-xl bg-[#D97706] flex items-center justify-center hover:bg-[#B45309] active:scale-95 transition-all shadow-lg shadow-[#D97706]/20"
+          >
+            <Plus className="w-5 h-5 text-white" />
+          </button>
+        </div>
+      </aside>
+
+      {/* Main content */}
+      <main className="flex-1 sm:ml-[72px] pb-20 sm:pb-0">
+        <Outlet />
+      </main>
+
+      {/* Mobile bottom nav */}
+      <nav className="sm:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-[#E5E5E0]/60 flex items-center justify-around z-50 px-4">
+        <button
+          onClick={() => navigate('/dashboard')}
+          className={`flex flex-col items-center gap-1 px-4 py-2 rounded-xl transition-all ${
+            isActive('/dashboard') ? 'text-[#D97706]' : 'text-[#9CA3AF]'
+          }`}
+        >
+          <Home className="w-5 h-5" />
+          <span className="text-[10px] font-semibold">Lists</span>
+        </button>
+
+        <button
+          onClick={() => {
+            if (location.pathname.startsWith('/list/')) {
+              window.dispatchEvent(new CustomEvent('showCreateItem'));
+            } else {
+              navigate('/dashboard');
+              setTimeout(() => window.dispatchEvent(new CustomEvent('showCreateList')), 100);
+            }
+          }}
+          className="w-12 h-12 rounded-2xl bg-[#D97706] flex items-center justify-center -mt-4 shadow-lg shadow-[#D97706]/25 active:scale-95 transition-all"
+        >
+          <Plus className="w-5 h-5 text-white" />
+        </button>
+
+        <button
+          onClick={() => navigate('/settings')}
+          className={`flex flex-col items-center gap-1 px-4 py-2 rounded-xl transition-all ${
+            isActive('/settings') ? 'text-[#D97706]' : 'text-[#9CA3AF]'
+          }`}
+        >
+          <Settings className="w-5 h-5" />
+          <span className="text-[10px] font-semibold">Settings</span>
+        </button>
+      </nav>
+    </div>
+  );
+}
+
+
+================================================================================
+FILE: src/pages/SettingsPage.tsx
+================================================================================
+import { useState } from 'react';
+import { useNavigate } from 'react-router';
+import { LogOut, Trash2, User, CreditCard, LayoutGrid, LayoutList, Columns3, Check, Moon, Sun, Bell, Shield, ChevronRight, AlertTriangle } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
+import type { LayoutMode } from '@/types';
+
+export default function SettingsPage() {
+  const navigate = useNavigate();
+  const { user, subscriptionStatus, trialDaysLeft, logOut } = useAuth();
+  const { showToast } = useToast();
+  const [defaultLayout, setDefaultLayout] = useState<LayoutMode>('standard');
+  const [moveChecked, setMoveChecked] = useState(true);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [signingOut, setSigningOut] = useState(false);
+  const [notifications, setNotifications] = useState(true);
+
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    await logOut();
+    showToast('Signed out', 'info');
+    navigate('/');
+  };
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmText !== 'DELETE') {
+      showToast('Type DELETE to confirm', 'error');
+      return;
+    }
+    showToast('Account deleted', 'info');
+    navigate('/');
+  };
+
+  const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
+    trialing: { label: 'Free Trial', color: 'text-amber-700', bg: 'bg-amber-50' },
+    active: { label: 'Active', color: 'text-emerald-700', bg: 'bg-emerald-50' },
+    past_due: { label: 'Past Due', color: 'text-red-700', bg: 'bg-red-50' },
+    canceled: { label: 'Canceled', color: 'text-[#6B6B5F]', bg: 'bg-[#F5F5F0]' },
+    none: { label: 'Free', color: 'text-[#6B6B5F]', bg: 'bg-[#F5F5F0]' },
+  };
+
+  const status = statusConfig[subscriptionStatus] || statusConfig.none;
+
+  const layoutOptions = [
+    { mode: 'compact' as LayoutMode, icon: LayoutGrid, label: 'Compact', desc: 'Dense, minimal' },
+    { mode: 'standard' as LayoutMode, icon: LayoutList, label: 'Standard', desc: 'Balanced view' },
+    { mode: 'visual' as LayoutMode, icon: Columns3, label: 'Visual', desc: 'Cards with icons' },
+  ];
+
+  return (
+    <div className="min-h-screen bg-[#FAFAF8]">
+      {/* Header */}
+      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-[#E5E5E0]/60">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4 sm:py-5">
+          <h1 className="text-xl sm:text-2xl font-semibold text-[#1A1A1A] tracking-tight">Settings</h1>
+        </div>
+      </header>
+
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+        {/* Profile */}
+        <section className="bg-white rounded-2xl border border-[#E5E5E0]/60 p-5 sm:p-6">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 rounded-2xl bg-[#F5F5F0] flex items-center justify-center text-xl font-semibold text-[#1A1A1A]">
+              {user?.full_name?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || '?'}
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="font-semibold text-[#1A1A1A] truncate">{user?.full_name || 'User'}</p>
+              <p className="text-sm text-[#9CA3AF] truncate">{user?.email}</p>
+            </div>
+            <button className="p-2 rounded-lg hover:bg-[#F5F5F0] transition-colors text-[#9CA3AF]">
+              <User className="w-5 h-5" />
+            </button>
+          </div>
+        </section>
+
+        {/* Subscription */}
+        <section className="bg-white rounded-2xl border border-[#E5E5E0]/60 p-5 sm:p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-9 h-9 rounded-xl bg-[#F5F5F0] flex items-center justify-center">
+              <CreditCard className="w-4.5 h-4.5 text-[#9CA3AF]" />
+            </div>
+            <h2 className="font-semibold text-[#1A1A1A]">Subscription</h2>
+          </div>
+
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <span className={`inline-block px-3 py-1 rounded-lg text-xs font-semibold ${status.bg} ${status.color}`}>
+                {status.label}
+              </span>
+              {subscriptionStatus === 'trialing' && trialDaysLeft > 0 && (
+                <p className="text-sm text-[#6B6B5F]">
+                  {trialDaysLeft} day{trialDaysLeft !== 1 ? 's' : ''} left
+                </p>
+              )}
+            </div>
+            <button className="h-9 px-4 bg-[#1A1A1A] text-white rounded-xl text-xs font-medium hover:bg-[#333] active:scale-95 transition-all">
+              {subscriptionStatus === 'active' ? 'Manage' : 'Upgrade'}
+            </button>
+          </div>
+
+          {(subscriptionStatus === 'trialing' || subscriptionStatus === 'none') && (
+            <p className="text-xs text-[#9CA3AF] leading-relaxed">
+              Upgrade to unlock unlimited lists, collaborators, and all features.
+            </p>
+          )}
+        </section>
+
+        {/* Preferences */}
+        <section className="bg-white rounded-2xl border border-[#E5E5E0]/60 p-5 sm:p-6">
+          <h2 className="font-semibold text-[#1A1A1A] mb-4">Preferences</h2>
+
+          <div className="space-y-5">
+            {/* Layout */}
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF] block mb-3">Default Layout</label>
+              <div className="grid grid-cols-3 gap-2">
+                {layoutOptions.map(({ mode, icon: Icon, label, desc }) => (
+                  <button
+                    key={mode}
+                    onClick={() => setDefaultLayout(mode)}
+                    className={`flex flex-col items-center gap-2 p-3 sm:p-4 rounded-xl border transition-all duration-200 ${
+                      defaultLayout === mode
+                        ? 'border-[#D97706] bg-[#D97706]/[0.03]'
+                        : 'border-[#E5E5E0] hover:border-[#1A1A1A]/20'
+                    }`}
+                  >
+                    <Icon className={`w-5 h-5 ${defaultLayout === mode ? 'text-[#D97706]' : 'text-[#9CA3AF]'}`} />
+                    <span className={`text-xs font-medium ${defaultLayout === mode ? 'text-[#1A1A1A]' : 'text-[#6B6B5F]'}`}>{label}</span>
+                    <span className="text-[10px] text-[#9CA3AF] hidden sm:block">{desc}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Toggle: Move checked to bottom */}
+            <div className="flex items-center justify-between py-4 border-t border-[#E5E5E0]/60">
+              <div>
+                <p className="text-sm font-medium text-[#1A1A1A]">Move checked to bottom</p>
+                <p className="text-xs text-[#9CA3AF] mt-0.5">Auto-sort checked items below unchecked</p>
+              </div>
+              <button
+                onClick={() => setMoveChecked(!moveChecked)}
+                className={`relative w-12 h-7 rounded-full transition-colors duration-200 ${
+                  moveChecked ? 'bg-[#D97706]' : 'bg-[#E5E5E0]'
+                }`}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow-sm transition-transform duration-200 ${
+                  moveChecked ? 'translate-x-5' : 'translate-x-0'
+                }`} />
+              </button>
+            </div>
+
+            {/* Toggle: Notifications */}
+            <div className="flex items-center justify-between py-4 border-t border-[#E5E5E0]/60">
+              <div className="flex items-center gap-3">
+                <Bell className="w-4 h-4 text-[#9CA3AF]" />
+                <div>
+                  <p className="text-sm font-medium text-[#1A1A1A]">Push notifications</p>
+                  <p className="text-xs text-[#9CA3AF] mt-0.5">Get notified when lists update</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setNotifications(!notifications)}
+                className={`relative w-12 h-7 rounded-full transition-colors duration-200 ${
+                  notifications ? 'bg-[#D97706]' : 'bg-[#E5E5E0]'
+                }`}
+              >
+                <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow-sm transition-transform duration-200 ${
+                  notifications ? 'translate-x-5' : 'translate-x-0'
+                }`} />
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {/* Account */}
+        <section className="bg-white rounded-2xl border border-[#E5E5E0]/60 p-5 sm:p-6">
+          <h2 className="font-semibold text-[#1A1A1A] mb-4">Account</h2>
+          <div className="space-y-3">
+            <button
+              onClick={handleSignOut}
+              disabled={signingOut}
+              className="w-full h-11 flex items-center justify-center gap-2 border border-[#E5E5E0] rounded-xl text-sm font-medium text-[#1A1A1A] hover:bg-[#F5F5F0] active:scale-[0.98] transition-all"
+            >
+              <LogOut className="w-4 h-4" />
+              {signingOut ? 'Signing out...' : 'Sign Out'}
+            </button>
+
+            {!showDeleteConfirm ? (
+              <button
+                onClick={() => setShowDeleteConfirm(true)}
+                className="w-full h-11 flex items-center justify-center gap-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-xl transition-colors"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete Account
+              </button>
+            ) : (
+              <div className="border border-red-200 rounded-xl p-4 bg-red-50">
+                <div className="flex items-start gap-3 mb-3">
+                  <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                  <p className="text-sm text-red-700 leading-relaxed">
+                    This will permanently delete your account and all data. Type <span className="font-semibold">DELETE</span> to confirm.
+                  </p>
+                </div>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={e => setDeleteConfirmText(e.target.value)}
+                  placeholder="Type DELETE"
+                  className="w-full bg-white rounded-xl px-4 py-3 text-sm text-[#1A1A1A] border border-red-200 focus:ring-2 focus:ring-red-200 focus:outline-none transition-all mb-3"
+                />
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => { setShowDeleteConfirm(false); setDeleteConfirmText(''); }} 
+                    className="flex-1 h-10 border border-[#E5E5E0] rounded-xl text-sm font-medium text-[#6B6B5F] hover:bg-white transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={handleDeleteAccount} 
+                    className="flex-1 h-10 bg-red-600 text-white rounded-xl text-sm font-medium hover:bg-red-700 active:scale-[0.98] transition-all"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Footer info */}
+        <div className="text-center py-6">
+          <p className="text-xs text-[#C4C4BC]">ListTogether v1.0</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+================================================================================
+FILE: src/pages/LoginPage.tsx
+================================================================================
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router';
+import { ShoppingCart, ArrowRight, Eye, EyeOff, Mail, Lock } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
+
+export default function LoginPage() {
+  const navigate = useNavigate();
+  const { signIn, signInGoogle, isAuthenticated } = useAuth();
+  const { showToast } = useToast();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (isAuthenticated) navigate('/dashboard', { replace: true });
+  }, [isAuthenticated, navigate]);
+
+  const validate = () => {
+    const errs: Record<string, string> = {};
+    if (!email) errs.email = 'Email is required';
+    else if (!/\S+@\S+\.\S+/.test(email)) errs.email = 'Invalid email address';
+    if (!password) errs.password = 'Password is required';
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validate()) return;
+    setLoading(true);
+    const result = await signIn(email, password);
+    setLoading(false);
+    if (result.error) {
+      showToast(result.error, 'error');
+    } else {
+      showToast('Welcome back', 'success');
+      navigate('/dashboard');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#FAFAF8] flex items-center justify-center px-5 sm:px-6 py-12">
+      <div className="w-full max-w-[380px]">
+        {/* Brand */}
+        <div className="flex items-center gap-2.5 mb-10">
+          <div className="w-9 h-9 rounded-xl bg-[#1A1A1A] flex items-center justify-center">
+            <ShoppingCart className="w-4.5 h-4.5 text-white" />
+          </div>
+          <span className="font-semibold text-[#1A1A1A] text-lg">ListTogether</span>
+        </div>
+
+        <h1 className="text-2xl sm:text-3xl font-semibold text-[#1A1A1A] tracking-tight mb-2">Welcome back</h1>
+        <p className="text-sm text-[#6B6B5F] mb-8">Sign in to your account</p>
+
+        <div className="bg-white rounded-2xl border border-[#E5E5E0]/60 p-6 sm:p-8 shadow-sm">
+          {/* Google */}
+          <button
+            onClick={signInGoogle}
+            className="w-full flex items-center justify-center gap-3 bg-[#F5F5F0] border border-[#E5E5E0] rounded-xl py-3 text-sm font-medium text-[#1A1A1A] hover:bg-[#E5E5E0] active:scale-[0.98] transition-all duration-200 mb-5"
+          >
+            <svg className="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none">
+              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+            </svg>
+            Continue with Google
+          </button>
+
+          <div className="flex items-center gap-3 mb-5">
+            <div className="flex-1 h-px bg-[#E5E5E0]" />
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#9CA3AF]">or</span>
+            <div className="flex-1 h-px bg-[#E5E5E0]" />
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF] block mb-2">Email</label>
+              <div className="relative">
+                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#C4C4BC]" />
+                <input
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={e => { setEmail(e.target.value); setErrors(p => ({ ...p, email: '' })); }}
+                  className={`w-full bg-[#F5F5F0] rounded-xl pl-10 pr-4 py-3 text-sm font-medium text-[#1A1A1A] placeholder:text-[#C4C4BC] focus:bg-white focus:ring-2 focus:ring-[#D97706]/20 focus:outline-none transition-all ${errors.email ? 'ring-2 ring-red-200' : ''}`}
+                />
+              </div>
+              {errors.email && <p className="text-xs text-red-600 mt-1.5 ml-1">{errors.email}</p>}
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF] block mb-2">Password</label>
+              <div className="relative">
+                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#C4C4BC]" />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={e => { setPassword(e.target.value); setErrors(p => ({ ...p, password: '' })); }}
+                  className={`w-full bg-[#F5F5F0] rounded-xl pl-10 pr-11 py-3 text-sm font-medium text-[#1A1A1A] placeholder:text-[#C4C4BC] focus:bg-white focus:ring-2 focus:ring-[#D97706]/20 focus:outline-none transition-all ${errors.password ? 'ring-2 ring-red-200' : ''}`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#C4C4BC] hover:text-[#6B6B5F] transition-colors"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              {errors.password && <p className="text-xs text-red-600 mt-1.5 ml-1">{errors.password}</p>}
+            </div>
+
+            <button 
+              type="submit" 
+              disabled={loading} 
+              className="w-full h-11 bg-[#1A1A1A] text-white rounded-xl text-sm font-medium hover:bg-[#333] active:scale-[0.98] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {loading ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <>
+                  Sign in
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </form>
+        </div>
+
+        <p className="text-center text-sm text-[#6B6B5F] mt-6">
+          No account?{' '}
+          <button onClick={() => navigate('/signup')} className="font-semibold text-[#D97706] hover:underline">
+            Create one free
+          </button>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+
+================================================================================
+FILE: src/pages/SignupPage.tsx
+================================================================================
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router';
+import { ShoppingCart, ArrowRight, Eye, EyeOff, Mail, Lock, User } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/contexts/ToastContext';
+
+export default function SignupPage() {
+  const navigate = useNavigate();
+  const { signUp, signInGoogle, isAuthenticated } = useAuth();
+  const { showToast } = useToast();
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (isAuthenticated) navigate('/dashboard', { replace: true });
+  }, [isAuthenticated, navigate]);
+
+  const validate = () => {
+    const errs: Record<string, string> = {};
+    if (!fullName || fullName.length < 2) errs.fullName = 'At least 2 characters';
+    if (!email) errs.email = 'Email is required';
+    else if (!/\S+@\S+\.\S+/.test(email)) errs.email = 'Invalid email address';
+    if (!password) errs.password = 'Password is required';
+    else if (password.length < 8) errs.password = 'At least 8 characters';
+    setErrors(errs);
+    return Object.keys(errs).length === 0;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!validate()) return;
+    setLoading(true);
+    const result = await signUp(email, password, fullName);
+    setLoading(false);
+    if (result.error) {
+      showToast(result.error, 'error');
+    } else {
+      showToast('Account created — welcome!', 'success');
+      navigate('/dashboard');
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-[#FAFAF8] flex items-center justify-center px-5 sm:px-6 py-12">
+      <div className="w-full max-w-[380px]">
+        <div className="flex items-center gap-2.5 mb-10">
+          <div className="w-9 h-9 rounded-xl bg-[#1A1A1A] flex items-center justify-center">
+            <ShoppingCart className="w-4.5 h-4.5 text-white" />
+          </div>
+          <span className="font-semibold text-[#1A1A1A] text-lg">ListTogether</span>
+        </div>
+
+        <h1 className="text-2xl sm:text-3xl font-semibold text-[#1A1A1A] tracking-tight mb-2">Create account</h1>
+        <p className="text-sm text-[#6B6B5F] mb-8">5-day free trial, no card required</p>
+
+        <div className="bg-white rounded-2xl border border-[#E5E5E0]/60 p-6 sm:p-8 shadow-sm">
+          <button
+            onClick={signInGoogle}
+            className="w-full flex items-center justify-center gap-3 bg-[#F5F5F0] border border-[#E5E5E0] rounded-xl py-3 text-sm font-medium text-[#1A1A1A] hover:bg-[#E5E5E0] active:scale-[0.98] transition-all duration-200 mb-5"
+          >
+            <svg className="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none">
+              <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
+              <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+              <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+              <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+            </svg>
+            Sign up with Google
+          </button>
+
+          <div className="flex items-center gap-3 mb-5">
+            <div className="flex-1 h-px bg-[#E5E5E0]" />
+            <span className="text-[11px] font-semibold uppercase tracking-wider text-[#9CA3AF]">or</span>
+            <div className="flex-1 h-px bg-[#E5E5E0]" />
+          </div>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF] block mb-2">Full name</label>
+              <div className="relative">
+                <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#C4C4BC]" />
+                <input
+                  type="text"
+                  placeholder="Alex Rivera"
+                  value={fullName}
+                  onChange={e => { setFullName(e.target.value); setErrors(p => ({ ...p, fullName: '' })); }}
+                  className={`w-full bg-[#F5F5F0] rounded-xl pl-10 pr-4 py-3 text-sm font-medium text-[#1A1A1A] placeholder:text-[#C4C4BC] focus:bg-white focus:ring-2 focus:ring-[#D97706]/20 focus:outline-none transition-all ${errors.fullName ? 'ring-2 ring-red-200' : ''}`}
+                />
+              </div>
+              {errors.fullName && <p className="text-xs text-red-600 mt-1.5 ml-1">{errors.fullName}</p>}
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF] block mb-2">Email</label>
+              <div className="relative">
+                <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#C4C4BC]" />
+                <input
+                  type="email"
+                  placeholder="you@example.com"
+                  value={email}
+                  onChange={e => { setEmail(e.target.value); setErrors(p => ({ ...p, email: '' })); }}
+                  className={`w-full bg-[#F5F5F0] rounded-xl pl-10 pr-4 py-3 text-sm font-medium text-[#1A1A1A] placeholder:text-[#C4C4BC] focus:bg-white focus:ring-2 focus:ring-[#D97706]/20 focus:outline-none transition-all ${errors.email ? 'ring-2 ring-red-200' : ''}`}
+                />
+              </div>
+              {errors.email && <p className="text-xs text-red-600 mt-1.5 ml-1">{errors.email}</p>}
+            </div>
+
+            <div>
+              <label className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF] block mb-2">Password</label>
+              <div className="relative">
+                <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#C4C4BC]" />
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  placeholder="Min. 8 characters"
+                  value={password}
+                  onChange={e => { setPassword(e.target.value); setErrors(p => ({ ...p, password: '' })); }}
+                  className={`w-full bg-[#F5F5F0] rounded-xl pl-10 pr-11 py-3 text-sm font-medium text-[#1A1A1A] placeholder:text-[#C4C4BC] focus:bg-white focus:ring-2 focus:ring-[#D97706]/20 focus:outline-none transition-all ${errors.password ? 'ring-2 ring-red-200' : ''}`}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#C4C4BC] hover:text-[#6B6B5F] transition-colors"
+                >
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
+              {errors.password && <p className="text-xs text-red-600 mt-1.5 ml-1">{errors.password}</p>}
+            </div>
+
+            <button 
+              type="submit" 
+              disabled={loading} 
+              className="w-full h-11 bg-[#1A1A1A] text-white rounded-xl text-sm font-medium hover:bg-[#333] active:scale-[0.98] transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {loading ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <>
+                  Create account
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </button>
+          </form>
+        </div>
+
+        <p className="text-center text-sm text-[#6B6B5F] mt-6">
+          Already have an account?{' '}
+          <button onClick={() => navigate('/login')} className="font-semibold text-[#D97706] hover:underline">
+            Sign in
+          </button>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+
+================================================================================
+FILE: src/index.css
+================================================================================
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 10%;
+    --primary: 37 78% 40%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 10%;
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 45%;
+    --accent: 0 0% 96%;
+    --accent-foreground: 0 0% 10%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 90%;
+    --input: 0 0% 90%;
+    --ring: 37 78% 40%;
+    --radius: 1rem;
+  }
+
+  * { @apply border-border; }
+
+  body {
+    @apply bg-[#FAFAF8] text-[#1A1A1A];
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: 'Plus Jakarta Sans', 'Inter', sans-serif;
+    letter-spacing: -0.02em;
+  }
+}
+
+@layer utilities {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2
+           bg-[#1A1A1A] text-white rounded-xl px-6 py-3 font-medium text-sm
+           hover:bg-[#333] active:scale-[0.98]
+           transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2
+           bg-white text-[#1A1A1A] rounded-xl px-6 py-3 font-medium text-sm
+           border border-[#E5E5E0]
+           hover:bg-[#F5F5F0] active:scale-[0.98]
+           transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .card-premium {
+    @apply bg-white rounded-2xl border border-[#E5E5E0]/60
+           hover:shadow-lg hover:shadow-[#1A1A1A]/[0.03] hover:border-[#D97706]/20
+           transition-all duration-300;
+  }
+
+  .glass-panel {
+    @apply bg-white/95 backdrop-blur-xl border border-white/20 shadow-xl;
+  }
+
+  .input-field {
+    @apply bg-[#F5F5F0] rounded-xl px-4 py-3.5
+           text-sm font-medium text-[#1A1A1A] placeholder:text-[#C4C4BC]
+           focus:bg-white focus:ring-2 focus:ring-[#D97706]/20
+           focus:outline-none transition-all duration-200;
+  }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #E5E5E0; border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: #C4C4BC; }
+
+/* Smooth scroll */
+html { scroll-behavior: smooth; }
+
+/* Selection */
+::selection { background-color: rgba(217, 119, 6, 0.2); }
+
+/* Focus visible */
+:focus-visible { outline: 2px solid rgba(217, 119, 6, 0.3); outline-offset: 2px; }
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+
+================================================================================
+FILE: src/App.tsx
+================================================================================
+import { Routes, Route, Navigate } from 'react-router';
+import { AuthProvider } from '@/contexts/AuthContext';
+import { ToastProvider } from '@/contexts/ToastContext';
+import { SmoothScroll } from '@/components/SmoothScroll';
+import { AppShell } from '@/components/AppShell';
+import LandingPage from '@/pages/LandingPage';
+import LoginPage from '@/pages/LoginPage';
+import SignupPage from '@/pages/SignupPage';
+import DashboardPage from '@/pages/DashboardPage';
+import ListDetailPage from '@/pages/ListDetailPage';
+import SettingsPage from '@/pages/SettingsPage';
+import PublicViewPage from '@/pages/PublicViewPage';
+import AuthCallbackPage from '@/pages/AuthCallbackPage';
+
+const isMissingKeys = !import.meta.env.VITE_SUPABASE_URL || !import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+function AppRoutes() {
+  if (isMissingKeys) {
+    return (
+      <div className="min-h-screen bg-[#FAFAF8] flex items-center justify-center p-4 text-center">
+        <div className="max-w-md bg-white p-8 rounded-2xl shadow-lg border border-red-100">
+          <div className="w-12 h-12 bg-red-50 text-red-600 rounded-xl flex items-center justify-center mx-auto mb-4">
+            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+          </div>
+          <h1 className="text-xl font-semibold text-[#1A1A1A] mb-2">Configuration Missing</h1>
+          <p className="text-sm text-[#6B6B5F] mb-6">
+            Supabase environment variables are missing. Make sure you&apos;ve added VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to your project settings.
+          </p>
+          <button onClick={() => window.location.reload()} className="btn-primary w-full">
+            Retry Connection
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Routes>
+      {/* Public routes */}
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/signup" element={<SignupPage />} />
+      <Route path="/l/:token" element={<PublicViewPage />} />
+      <Route path="/auth/callback" element={<AuthCallbackPage />} />
+
+      {/* Protected routes within app shell */}
+      <Route element={<AppShell />}>
+        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/list/:listId" element={<ListDetailPage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+      </Route>
+
+      {/* Fallback */}
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <ToastProvider>
+        <SmoothScroll>
+          <AppRoutes />
+        </SmoothScroll>
+      </ToastProvider>
+    </AuthProvider>
+  );
+}
+
+
+================================================================================
+END OF FILES
+================================================================================
