@@ -212,7 +212,6 @@ export default function PublicViewPage() {
                         onTouchEnd={(e) => {
                           const touch = e.changedTouches[0];
                           const startX = (e.currentTarget as any)._touchX || 0;
-                          const diff = touch.clientX - startX;
                           (e.currentTarget as HTMLElement).style.transform = '';
                           (e.currentTarget as HTMLElement).style.backgroundColor = '';
                           (e.currentTarget as any)._touchX = 0;

@@ -632,7 +632,7 @@ function ListSettingsForm({ list, onSave, onClose }: {
   onClose: () => void;
 }) {
   const [name, setName] = useState(list.name);
-  const [privacy, setPrivacy] = useState(list.privacy);
+  const privacy = list.privacy;
 
   return (
     <form onSubmit={(e) => { e.preventDefault(); onSave({ name: name.trim(), privacy }); }} className="space-y-8">
@@ -699,6 +699,9 @@ function EditItemForm({ item, onSave, onDelete, onClose }: {
       </div>
     </form>
   );
+}
+
+
 }
 
 
