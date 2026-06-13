@@ -223,6 +223,11 @@ export async function removeCollaborator(collaboratorId: string) {
   if (error) throw error;
 }
 
+interface InviteCodeResult {
+  id: string;
+  owner_id: string;
+}
+
 export async function joinListByCode(code: string): Promise<string> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
@@ -232,7 +237,7 @@ export async function joinListByCode(code: string): Promise<string> {
 
   const { data: list, error: listError } = await supabase
     .rpc('get_list_by_invite_code', { p_code: normalizedCode })
-    .single();
+    .single() as { data: InviteCodeResult | null; error: any };
 
   if (listError || !list) throw new Error('Invalid invite code');
 
