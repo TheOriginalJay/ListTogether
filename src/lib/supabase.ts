@@ -18,7 +18,6 @@ export const supabase = createClient(supabaseUrl || 'https://placeholder.supabas
 
 export type { UserProfile, ShoppingList, ListItem, Collaborator };
 
-// Auth helpers
 export async function signInWithEmail(email: string, password: string) {
   return supabase.auth.signInWithPassword({ email, password });
 }
@@ -40,12 +39,10 @@ export async function getCurrentUser(): Promise<UserProfile | null> {
   return profile as UserProfile | null;
 }
 
-// List helpers
-export async function getUserLists(): Promise<<ShoppingList[]> {
+export async function getUserLists(): Promise<ShoppingList[]> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
 
-  // Fetch lists owned by the user
   const { data: ownedLists, error: ownedError } = await supabase
     .from('lists')
     .select('*, items(count)')
@@ -53,7 +50,6 @@ export async function getUserLists(): Promise<<ShoppingList[]> {
 
   if (ownedError) console.error('Error fetching owned lists:', ownedError);
 
-  // Fetch lists where the user is a collaborator
   const { data: collabData, error: collabError } = await supabase
     .from('list_collaborators')
     .select('list_id, lists(*, items(count))')
@@ -61,7 +57,6 @@ export async function getUserLists(): Promise<<ShoppingList[]> {
 
   if (collabError) console.error('Error fetching collaborator entries:', collabError);
 
-  // collabData rows have a .lists property (singular join alias → single object)
   const collaboratedLists = (collabData || [])
     .map((c: any) => c.lists)
     .filter(Boolean)
@@ -69,14 +64,13 @@ export async function getUserLists(): Promise<<ShoppingList[]> {
 
   const allLists = [...(ownedLists || []), ...collaboratedLists];
 
-  // Deduplicate by ID and sort by updated_at
   const uniqueLists = Array.from(new Map(allLists.map((l: any) => [l.id, l])).values());
-  return (uniqueLists as any[]).sort((a, b) => 
+  return (uniqueLists as any[]).sort((a, b) =>
     new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
   ) as ShoppingList[];
 }
 
-export async function createList(name: string, privacy: string): Promise<<ShoppingList> {
+export async function createList(name: string, privacy: string): Promise<ShoppingList> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
@@ -100,7 +94,7 @@ export async function createList(name: string, privacy: string): Promise<<Shoppi
   return data as ShoppingList;
 }
 
-export async function getListById(listId: string): Promise<<ShoppingList | null> {
+export async function getListById(listId: string): Promise<ShoppingList | null> {
   const { data, error } = await supabase
     .from('lists')
     .select('*, items(*)')
@@ -111,7 +105,7 @@ export async function getListById(listId: string): Promise<<ShoppingList | null>
   return data as ShoppingList;
 }
 
-export async function getListByShareToken(token: string): Promise<<ShoppingList | null> {
+export async function getListByShareToken(token: string): Promise<ShoppingList | null> {
   const { data, error } = await supabase
     .from('lists')
     .select('*, items(*), owner:users(full_name, email)')
@@ -119,13 +113,12 @@ export async function getListByShareToken(token: string): Promise<<ShoppingList 
     .single();
 
   if (error) return null;
-  // Only expose link_sharing lists to public
   const list = data as ShoppingList;
   if (list.privacy !== 'link_sharing') return null;
   return list;
 }
 
-export async function updateList(listId: string, updates: Partial<<ShoppingList>) {
+export async function updateList(listId: string, updates: Partial<ShoppingList>) {
   const { data, error } = await supabase
     .from('lists')
     .update({ ...updates, updated_at: new Date().toISOString() })
@@ -146,7 +139,6 @@ export async function deleteList(listId: string) {
   if (error) throw error;
 }
 
-// Item helpers
 export async function getListItems(listId: string): Promise<ListItem[]> {
   const { data, error } = await supabase
     .from('items')
@@ -201,8 +193,7 @@ export async function batchCreateItems(items: Omit<ListItem, 'id' | 'created_at'
   return (data || []) as ListItem[];
 }
 
-// Collaborator helpers
-export async function getCollaborators(listId: string): Promise<<Collaborator[]> {
+export async function getCollaborators(listId: string): Promise<Collaborator[]> {
   const { data, error } = await supabase
     .from('list_collaborators')
     .select('*')
@@ -212,7 +203,7 @@ export async function getCollaborators(listId: string): Promise<<Collaborator[]>
   return (data || []) as Collaborator[];
 }
 
-export async function addCollaborator(listId: string, email: string, role: string): Promise<<Collaborator> {
+export async function addCollaborator(listId: string, email: string, role: string): Promise<Collaborator> {
   const { data, error } = await supabase
     .from('list_collaborators')
     .insert({ list_id: listId, email, role })
@@ -232,7 +223,6 @@ export async function removeCollaborator(collaboratorId: string) {
   if (error) throw error;
 }
 
-// FIXED: Join by invite code — uses security definer RPC to bypass RLS
 export async function joinListByCode(code: string): Promise<string> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
@@ -240,19 +230,16 @@ export async function joinListByCode(code: string): Promise<string> {
   const normalizedCode = code.toUpperCase().trim();
   if (normalizedCode.length !== 6) throw new Error('Invite code must be 6 characters');
 
-  // Use RPC to bypass RLS for invite code lookup
   const { data: list, error: listError } = await supabase
     .rpc('get_list_by_invite_code', { p_code: normalizedCode })
     .single();
 
   if (listError || !list) throw new Error('Invalid invite code');
 
-  // If user is already the owner, just return the list id
   if (list.owner_id === user.id) {
     return list.id;
   }
 
-  // Check if already a collaborator
   const { data: existing, error: existingError } = await supabase
     .from('list_collaborators')
     .select('id')
@@ -266,7 +253,6 @@ export async function joinListByCode(code: string): Promise<string> {
     return list.id;
   }
 
-  // Insert as new collaborator
   const { error: insertError } = await supabase
     .from('list_collaborators')
     .insert({
@@ -284,7 +270,6 @@ export async function joinListByCode(code: string): Promise<string> {
   return list.id;
 }
 
-// Realtime subscriptions
 export function subscribeToList(listId: string, callback: (payload: any) => void) {
   return supabase
     .channel(`list_${listId}`)
