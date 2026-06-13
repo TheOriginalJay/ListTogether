@@ -41,7 +41,7 @@ export async function getCurrentUser(): Promise<UserProfile | null> {
 }
 
 // List helpers
-export async function getUserLists(): Promise<ShoppingList[]> {
+export async function getUserLists(): Promise<<ShoppingList[]> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return [];
 
@@ -76,7 +76,7 @@ export async function getUserLists(): Promise<ShoppingList[]> {
   ) as ShoppingList[];
 }
 
-export async function createList(name: string, privacy: string): Promise<ShoppingList> {
+export async function createList(name: string, privacy: string): Promise<<ShoppingList> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
@@ -100,7 +100,7 @@ export async function createList(name: string, privacy: string): Promise<Shoppin
   return data as ShoppingList;
 }
 
-export async function getListById(listId: string): Promise<ShoppingList | null> {
+export async function getListById(listId: string): Promise<<ShoppingList | null> {
   const { data, error } = await supabase
     .from('lists')
     .select('*, items(*)')
@@ -111,7 +111,7 @@ export async function getListById(listId: string): Promise<ShoppingList | null> 
   return data as ShoppingList;
 }
 
-export async function getListByShareToken(token: string): Promise<ShoppingList | null> {
+export async function getListByShareToken(token: string): Promise<<ShoppingList | null> {
   const { data, error } = await supabase
     .from('lists')
     .select('*, items(*), owner:users(full_name, email)')
@@ -125,7 +125,7 @@ export async function getListByShareToken(token: string): Promise<ShoppingList |
   return list;
 }
 
-export async function updateList(listId: string, updates: Partial<ShoppingList>) {
+export async function updateList(listId: string, updates: Partial<<ShoppingList>) {
   const { data, error } = await supabase
     .from('lists')
     .update({ ...updates, updated_at: new Date().toISOString() })
@@ -202,7 +202,7 @@ export async function batchCreateItems(items: Omit<ListItem, 'id' | 'created_at'
 }
 
 // Collaborator helpers
-export async function getCollaborators(listId: string): Promise<Collaborator[]> {
+export async function getCollaborators(listId: string): Promise<<Collaborator[]> {
   const { data, error } = await supabase
     .from('list_collaborators')
     .select('*')
@@ -212,7 +212,7 @@ export async function getCollaborators(listId: string): Promise<Collaborator[]> 
   return (data || []) as Collaborator[];
 }
 
-export async function addCollaborator(listId: string, email: string, role: string): Promise<Collaborator> {
+export async function addCollaborator(listId: string, email: string, role: string): Promise<<Collaborator> {
   const { data, error } = await supabase
     .from('list_collaborators')
     .insert({ list_id: listId, email, role })
@@ -232,7 +232,7 @@ export async function removeCollaborator(collaboratorId: string) {
   if (error) throw error;
 }
 
-// FIXED: Join by invite code - complete rewrite with proper error handling
+// FIXED: Join by invite code — uses security definer RPC to bypass RLS
 export async function joinListByCode(code: string): Promise<string> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
@@ -240,11 +240,9 @@ export async function joinListByCode(code: string): Promise<string> {
   const normalizedCode = code.toUpperCase().trim();
   if (normalizedCode.length !== 6) throw new Error('Invite code must be 6 characters');
 
-  // Find the list by invite code
+  // Use RPC to bypass RLS for invite code lookup
   const { data: list, error: listError } = await supabase
-    .from('lists')
-    .select('id, owner_id, privacy, invite_code')
-    .eq('invite_code', normalizedCode)
+    .rpc('get_list_by_invite_code', { p_code: normalizedCode })
     .single();
 
   if (listError || !list) throw new Error('Invalid invite code');
@@ -265,7 +263,6 @@ export async function joinListByCode(code: string): Promise<string> {
   if (existingError) console.error('Error checking existing collaborator:', existingError);
 
   if (existing) {
-    // Already a member — just return the list id
     return list.id;
   }
 

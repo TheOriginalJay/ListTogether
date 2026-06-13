@@ -25,6 +25,13 @@ This project is a collaborative shopping list application built with React, Vite
 - Three layout modes: Compact, Standard, Visual.
 - Brand kit: Warm amber primary, deep charcoal text, cream backgrounds.
 
+## Session Initialization
+On startup, always read the following files immediately to establish current project state and requirements:
+- `PRD.md` (located in `./`)
+- `PROJECT_STATE.md` (located in `../`)
+
+**Confirmation:** After reading these files, explicitly state "I've initialized the project" before answering any user queries.
+
 ## Special Instructions
 - **Conflict Resolution:** Detect duplicates within a list and prompt user to merge.
 - **Voice Input:** Deferred until a suitable free API is identified.
