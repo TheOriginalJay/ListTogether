@@ -19,7 +19,25 @@ export default function SettingsPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
   const [signingOut, setSigningOut] = useState(false);
-  const [notifications, setNotifications] = useState(true);
+  const notifSupported = typeof Notification !== 'undefined';
+  const [notifPerm, setNotifPerm] = useState<NotificationPermission>(
+    notifSupported ? Notification.permission : 'denied'
+  );
+
+  const toggleNotifications = async () => {
+    if (!notifSupported) { showToast('Notifications aren’t supported on this browser', 'error'); return; }
+    if (notifPerm === 'granted') {
+      showToast('Turn notifications off in your browser settings', 'info');
+      return;
+    }
+    if (notifPerm === 'denied') {
+      showToast('Notifications are blocked — enable them in your browser settings', 'error');
+      return;
+    }
+    const perm = await Notification.requestPermission();
+    setNotifPerm(perm);
+    showToast(perm === 'granted' ? 'Reminder notifications on' : 'Notifications not enabled', perm === 'granted' ? 'success' : 'info');
+  };
 
   const handleSignOut = async () => {
     setSigningOut(true);
@@ -167,18 +185,18 @@ export default function SettingsPage() {
               <div className="flex items-center gap-3">
                 <Bell className="w-4 h-4 text-[#9CA3AF]" />
                 <div>
-                  <p className="text-sm font-medium text-[#1A1A1A]">Push notifications</p>
-                  <p className="text-xs text-[#9CA3AF] mt-0.5">Get notified when lists update</p>
+                  <p className="text-sm font-medium text-[#1A1A1A]">Reminder notifications</p>
+                  <p className="text-xs text-[#9CA3AF] mt-0.5">Get notified when a reminder is due</p>
                 </div>
               </div>
               <button
-                onClick={() => setNotifications(!notifications)}
+                onClick={toggleNotifications}
                 className={`relative w-12 h-7 rounded-full transition-colors duration-200 ${
-                  notifications ? 'bg-[#D97706]' : 'bg-[#E5E5E0]'
+                  notifPerm === 'granted' ? 'bg-[#D97706]' : 'bg-[#E5E5E0]'
                 }`}
               >
                 <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow-sm transition-transform duration-200 ${
-                  notifications ? 'translate-x-5' : 'translate-x-0'
+                  notifPerm === 'granted' ? 'translate-x-5' : 'translate-x-0'
                 }`} />
               </button>
             </div>

@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { Plus, Search, Pin, PinOff, Trash2, X, StickyNote } from 'lucide-react';
 import { useToast } from '@/contexts/ToastContext';
 import { getNotes, createNote, updateNote, deleteNote, NOTE_COLORS, noteColorBg } from '@/lib/notes';
+import { RichTextEditor } from '@/components/RichTextEditor';
+import { htmlToText } from '@/lib/html';
 import type { Note, NoteColor } from '@/types';
 
 function relativeTime(iso: string): string {
@@ -93,7 +95,7 @@ export default function NotesPage() {
 
   const q = query.trim().toLowerCase();
   const filtered = q
-    ? notes.filter(n => n.title.toLowerCase().includes(q) || n.body.toLowerCase().includes(q))
+    ? notes.filter(n => n.title.toLowerCase().includes(q) || htmlToText(n.body).toLowerCase().includes(q))
     : notes;
   const pinned = filtered.filter(n => n.is_pinned);
   const others = filtered.filter(n => !n.is_pinned);
@@ -205,7 +207,9 @@ function NoteGrid({ notes, onOpen, onTogglePin }: {
               {note.is_pinned ? <Pin className="w-3.5 h-3.5 fill-current" /> : <Pin className="w-3.5 h-3.5" />}
             </span>
           </div>
-          {note.body && <p className="text-xs text-[#6B6B5F] leading-relaxed line-clamp-6 whitespace-pre-wrap">{note.body}</p>}
+          {htmlToText(note.body) && (
+            <p className="text-xs text-[#6B6B5F] leading-relaxed line-clamp-6 whitespace-pre-wrap">{htmlToText(note.body)}</p>
+          )}
           <p className="text-[10px] text-[#9CA3AF] mt-3">{relativeTime(note.updated_at)}</p>
         </button>
       ))}
@@ -292,12 +296,11 @@ function NoteEditor({ note, onClose, onSaved, onDelete }: {
             placeholder="Title"
             className="w-full bg-transparent text-xl sm:text-2xl font-semibold text-[#1A1A1A] placeholder:text-[#C4C4BC] focus:outline-none mb-3"
           />
-          <textarea
-            value={body}
-            onChange={e => setBody(e.target.value)}
+          <RichTextEditor
+            initialHtml={note.body}
+            onChange={setBody}
             placeholder="Start writing…"
-            autoFocus={!title && !body}
-            className="w-full min-h-[40vh] bg-transparent text-[15px] leading-relaxed text-[#1F2937] placeholder:text-[#C4C4BC] focus:outline-none resize-none"
+            autoFocus={!title && !note.body}
           />
         </div>
 

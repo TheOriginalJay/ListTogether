@@ -3,6 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useEffect } from 'react';
 import { ShoppingBag, Settings, Home, Plus, StickyNote, Bell } from 'lucide-react';
 import { InstallPrompt } from '@/components/InstallPrompt';
+import { useReminderNotifications } from '@/hooks/useReminderNotifications';
 
 const NAV_ITEMS = [
   { path: '/dashboard', label: 'Lists', icon: Home },
@@ -15,6 +16,7 @@ export function AppShell() {
   const { isAuthenticated, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  useReminderNotifications();
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
