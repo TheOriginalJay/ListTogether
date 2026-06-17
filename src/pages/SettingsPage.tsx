@@ -9,6 +9,8 @@ import { InstallPrompt } from '@/components/InstallPrompt';
 import { exportBackup, importBackup, restoreLatestLocal } from '@/lib/backup';
 import { exportEncryptedBackup, importEncryptedBackup } from '@/lib/cryptoBackup';
 import { getLatestBackup } from '@/lib/db';
+import { hasPin, removePin } from '@/lib/secret';
+import { unsecretAllNotes } from '@/lib/notes';
 
 // Whop checkout/support link — same platform used for payments.
 // Set VITE_WHOP_SUPPORT_URL in the environment to your real Whop link.
@@ -118,6 +120,12 @@ export default function SettingsPage() {
     } finally {
       setBusy(null);
     }
+  };
+
+  const handleResetPin = async () => {
+    removePin();
+    try { await unsecretAllNotes(); } catch { /* ignore */ }
+    showToast('Secret PIN reset — secret notes are visible again', 'info');
   };
 
   const handleSignOut = async () => {
@@ -372,6 +380,28 @@ export default function SettingsPage() {
             <input ref={encFileRef} type="file" accept="application/json,.json" onChange={handleEncImport} className="hidden" />
           </div>
         </section>
+
+        {/* Secret space */}
+        {hasPin() && (
+          <section className="bg-white rounded-2xl border border-[#E5E5E0]/60 p-5 sm:p-6">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-9 h-9 rounded-xl bg-[#F5F5F0] flex items-center justify-center">
+                <Lock className="w-4.5 h-4.5 text-[#6B6B5F]" />
+              </div>
+              <h2 className="font-semibold text-[#1A1A1A]">Secret space</h2>
+            </div>
+            <p className="text-xs text-[#9CA3AF] leading-relaxed mb-4">
+              A PIN hides secret notes on this device. Forgot it? Reset to remove the lock —
+              your secret notes become visible again (nothing is deleted).
+            </p>
+            <button
+              onClick={handleResetPin}
+              className="w-full h-11 flex items-center justify-center gap-2 border border-[#E5E5E0] rounded-xl text-sm font-medium text-[#1A1A1A] hover:bg-[#F5F5F0] active:scale-[0.98] transition-all"
+            >
+              <RotateCcw className="w-4 h-4" /> Reset PIN
+            </button>
+          </section>
+        )}
 
         {/* Account */}
         <section className="bg-white rounded-2xl border border-[#E5E5E0]/60 p-5 sm:p-6">

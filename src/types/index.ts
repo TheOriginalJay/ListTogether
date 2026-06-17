@@ -90,6 +90,7 @@ export interface Note {
   color: NoteColor;
   is_pinned: boolean;
   is_archived: boolean;
+  is_secret: boolean;
   created_at: string;
   updated_at: string;
 }

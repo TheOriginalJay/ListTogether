@@ -41,7 +41,7 @@ export async function createNote(partial?: Partial<Pick<Note, 'title' | 'body' |
 
 export async function updateNote(
   id: string,
-  updates: Partial<Pick<Note, 'title' | 'body' | 'color' | 'is_pinned' | 'is_archived'>>
+  updates: Partial<Pick<Note, 'title' | 'body' | 'color' | 'is_pinned' | 'is_archived' | 'is_secret'>>
 ): Promise<Note> {
   const { data, error } = await supabase
     .from('notes')
@@ -57,6 +57,13 @@ export async function updateNote(
 export async function deleteNote(id: string): Promise<void> {
   const { error } = await supabase.from('notes').delete().eq('id', id);
   if (error) throw error;
+}
+
+/** Clear the secret flag on all of the user's notes (used when removing the PIN). */
+export async function unsecretAllNotes(): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return;
+  await supabase.from('notes').update({ is_secret: false }).eq('owner_id', user.id).eq('is_secret', true);
 }
 
 export const NOTE_COLORS: { value: NoteColor; label: string; bg: string; ring: string }[] = [
