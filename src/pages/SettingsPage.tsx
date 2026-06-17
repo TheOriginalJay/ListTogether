@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { LogOut, Trash2, User, Sparkles, LayoutGrid, LayoutList, Columns3, Bell, AlertTriangle, Heart } from 'lucide-react';
+import { useRef } from 'react';
+import { LogOut, Trash2, User, Sparkles, LayoutGrid, LayoutList, Columns3, Bell, AlertTriangle, Heart, Download, Upload, DatabaseBackup } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import type { LayoutMode } from '@/types';
 import { InstallPrompt } from '@/components/InstallPrompt';
+import { exportBackup, importBackup } from '@/lib/backup';
 
 // Whop checkout/support link — same platform used for payments.
 // Set VITE_WHOP_SUPPORT_URL in the environment to your real Whop link.
@@ -37,6 +39,36 @@ export default function SettingsPage() {
     const perm = await Notification.requestPermission();
     setNotifPerm(perm);
     showToast(perm === 'granted' ? 'Reminder notifications on' : 'Notifications not enabled', perm === 'granted' ? 'success' : 'info');
+  };
+
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState<'export' | 'import' | null>(null);
+
+  const handleExport = async () => {
+    setBusy('export');
+    try {
+      await exportBackup();
+      showToast('Backup downloaded', 'success');
+    } catch {
+      showToast('Could not create backup', 'error');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setBusy('import');
+    try {
+      const r = await importBackup(file);
+      showToast(`Restored ${r.lists} lists, ${r.notes} notes, ${r.reminders} reminders`, 'success');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not import backup', 'error');
+    } finally {
+      setBusy(null);
+    }
   };
 
   const handleSignOut = async () => {
@@ -201,6 +233,39 @@ export default function SettingsPage() {
               </button>
             </div>
           </div>
+        </section>
+
+        {/* Backup & restore */}
+        <section className="bg-white rounded-2xl border border-[#E5E5E0]/60 p-5 sm:p-6">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-9 h-9 rounded-xl bg-[#F5F5F0] flex items-center justify-center">
+              <DatabaseBackup className="w-4.5 h-4.5 text-[#6B6B5F]" />
+            </div>
+            <h2 className="font-semibold text-[#1A1A1A]">Backup &amp; restore</h2>
+          </div>
+          <p className="text-xs text-[#9CA3AF] leading-relaxed mb-4">
+            Download a local copy of all your lists, notes, and reminders, or restore from a
+            backup file. Importing adds items as new — it never overwrites what you already have.
+          </p>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={handleExport}
+              disabled={busy !== null}
+              className="h-11 flex items-center justify-center gap-2 border border-[#E5E5E0] rounded-xl text-sm font-medium text-[#1A1A1A] hover:bg-[#F5F5F0] active:scale-[0.98] transition-all disabled:opacity-50"
+            >
+              <Download className="w-4 h-4" />
+              {busy === 'export' ? 'Exporting…' : 'Export'}
+            </button>
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={busy !== null}
+              className="h-11 flex items-center justify-center gap-2 border border-[#E5E5E0] rounded-xl text-sm font-medium text-[#1A1A1A] hover:bg-[#F5F5F0] active:scale-[0.98] transition-all disabled:opacity-50"
+            >
+              <Upload className="w-4 h-4" />
+              {busy === 'import' ? 'Importing…' : 'Import'}
+            </button>
+          </div>
+          <input ref={fileRef} type="file" accept="application/json,.json" onChange={handleImport} className="hidden" />
         </section>
 
         {/* Account */}

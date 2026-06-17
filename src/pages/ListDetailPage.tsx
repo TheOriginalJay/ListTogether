@@ -20,6 +20,7 @@ import {
   cacheItems, getCachedItems, updateCachedItem, deleteCachedItem,
   addCachedItem, queueMutation, getOnlineStatus
 } from '@/lib/db';
+import { VoiceButton } from '@/components/VoiceButton';
 import type { ListItem, ShoppingList, LayoutMode, ParsedItem } from '@/types';
 
 const CATEGORY_ICONS: Record<string, any> = {
@@ -689,7 +690,12 @@ export default function ListDetailPage() {
                 onFocus={() => setIsInputFocused(true)}
                 onBlur={() => setIsInputFocused(false)}
                 placeholder="Add items: 3 apples, milk, bread..."
-                className="w-full bg-[#F5F5F0] rounded-2xl pl-12 pr-4 py-3.5 sm:py-4 text-sm sm:text-base font-medium text-[#1A1A1A] placeholder:text-[#C4C4BC] focus:bg-white focus:ring-2 focus:ring-[#D97706]/20 focus:outline-none transition-all duration-200"
+                className="w-full bg-[#F5F5F0] rounded-2xl pl-12 pr-14 py-3.5 sm:py-4 text-sm sm:text-base font-medium text-[#1A1A1A] placeholder:text-[#C4C4BC] focus:bg-white focus:ring-2 focus:ring-[#D97706]/20 focus:outline-none transition-all duration-200"
+              />
+              <VoiceButton
+                onText={t => setInputText(prev => (prev ? `${prev}, ${t}` : t))}
+                title="Add items by voice"
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9"
               />
             </div>
             <button 

@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Plus, Bell, Check, Trash2, X, Calendar, ChevronDown } from 'lucide-react';
 import { useToast } from '@/contexts/ToastContext';
+import { VoiceButton } from '@/components/VoiceButton';
 import {
   getReminders, createReminder, updateReminder, toggleReminder, deleteReminder,
   groupReminders, PRIORITY_META,
@@ -266,14 +267,20 @@ function ReminderForm({ reminder, onClose, onSave, onDelete }: {
         </div>
 
         <div className="px-5 py-4 space-y-4">
-          <input
-            value={title}
-            onChange={e => setTitle(e.target.value)}
-            placeholder="What do you need to remember?"
-            autoFocus
-            onKeyDown={e => { if (e.key === 'Enter') submit(); }}
-            className="w-full bg-[#F5F5F0] rounded-xl px-4 py-3 text-sm font-medium text-[#1A1A1A] placeholder:text-[#C4C4BC] focus:bg-white focus:ring-2 focus:ring-[#D97706]/20 focus:outline-none transition-all"
-          />
+          <div className="relative">
+            <input
+              value={title}
+              onChange={e => setTitle(e.target.value)}
+              placeholder="What do you need to remember?"
+              autoFocus
+              onKeyDown={e => { if (e.key === 'Enter') submit(); }}
+              className="w-full bg-[#F5F5F0] rounded-xl pl-4 pr-12 py-3 text-sm font-medium text-[#1A1A1A] placeholder:text-[#C4C4BC] focus:bg-white focus:ring-2 focus:ring-[#D97706]/20 focus:outline-none transition-all"
+            />
+            <VoiceButton
+              onText={t => setTitle(prev => (prev ? `${prev} ${t}` : t))}
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8"
+            />
+          </div>
 
           <div>
             <label className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF] block mb-2">Due date & time</label>
