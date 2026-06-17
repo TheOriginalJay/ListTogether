@@ -1,6 +1,8 @@
-# ListTogether - Project Mandates
+# Bagged - Project Mandates
 
-This project is a collaborative shopping list application built with React, Vite, and Supabase.
+This project is a collaborative shopping list application (evolving into a 3-in-1:
+shopping lists + notes + reminders) built with React, Vite, and Supabase.
+The app was renamed from "ListTogether" to "Bagged" on 2026-06-17.
 
 ## Tech Stack
 - **Frontend:** React 19 (TypeScript), Vite 7

@@ -1,13 +1,17 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { LogOut, Trash2, User, CreditCard, LayoutGrid, LayoutList, Columns3, Bell, AlertTriangle } from 'lucide-react';
+import { LogOut, Trash2, User, Sparkles, LayoutGrid, LayoutList, Columns3, Bell, AlertTriangle, Heart } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import type { LayoutMode } from '@/types';
 
+// Whop checkout/support link — same platform used for payments.
+// Set VITE_WHOP_SUPPORT_URL in the environment to your real Whop link.
+const SUPPORT_URL = import.meta.env.VITE_WHOP_SUPPORT_URL || 'https://whop.com';
+
 export default function SettingsPage() {
   const navigate = useNavigate();
-  const { user, subscriptionStatus, trialDaysLeft, logOut } = useAuth();
+  const { user, logOut } = useAuth();
   const { showToast } = useToast();
   const [defaultLayout, setDefaultLayout] = useState<LayoutMode>('standard');
   const [moveChecked, setMoveChecked] = useState(true);
@@ -31,16 +35,6 @@ export default function SettingsPage() {
     showToast('Account deleted', 'info');
     navigate('/');
   };
-
-  const statusConfig: Record<string, { label: string; color: string; bg: string }> = {
-    trialing: { label: 'Free Trial', color: 'text-amber-700', bg: 'bg-amber-50' },
-    active: { label: 'Active', color: 'text-emerald-700', bg: 'bg-emerald-50' },
-    past_due: { label: 'Past Due', color: 'text-red-700', bg: 'bg-red-50' },
-    canceled: { label: 'Canceled', color: 'text-[#6B6B5F]', bg: 'bg-[#F5F5F0]' },
-    none: { label: 'Free', color: 'text-[#6B6B5F]', bg: 'bg-[#F5F5F0]' },
-  };
-
-  const status = statusConfig[subscriptionStatus] || statusConfig.none;
 
   const layoutOptions = [
     { mode: 'compact' as LayoutMode, icon: LayoutGrid, label: 'Compact', desc: 'Dense, minimal' },
@@ -74,36 +68,49 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        {/* Subscription */}
+        {/* Plan */}
         <section className="bg-white rounded-2xl border border-[#E5E5E0]/60 p-5 sm:p-6">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-9 h-9 rounded-xl bg-[#F5F5F0] flex items-center justify-center">
-              <CreditCard className="w-4.5 h-4.5 text-[#9CA3AF]" />
+            <div className="w-9 h-9 rounded-xl bg-[#D97706]/10 flex items-center justify-center">
+              <Sparkles className="w-4.5 h-4.5 text-[#D97706]" />
             </div>
-            <h2 className="font-semibold text-[#1A1A1A]">Subscription</h2>
+            <h2 className="font-semibold text-[#1A1A1A]">Plan</h2>
           </div>
 
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <span className={`inline-block px-3 py-1 rounded-lg text-xs font-semibold ${status.bg} ${status.color}`}>
-                {status.label}
-              </span>
-              {subscriptionStatus === 'trialing' && trialDaysLeft > 0 && (
-                <p className="text-sm text-[#6B6B5F]">
-                  {trialDaysLeft} day{trialDaysLeft !== 1 ? 's' : ''} left
-                </p>
-              )}
-            </div>
-            <button className="h-9 px-4 bg-[#1A1A1A] text-white rounded-xl text-xs font-medium hover:bg-[#333] active:scale-95 transition-all">
-              {subscriptionStatus === 'active' ? 'Manage' : 'Upgrade'}
-            </button>
+          <div className="flex items-center gap-3 mb-3">
+            <span className="inline-block px-3 py-1 rounded-lg text-xs font-semibold bg-emerald-50 text-emerald-700">
+              Free
+            </span>
+            <p className="text-sm text-[#6B6B5F]">All features unlocked</p>
           </div>
 
-          {(subscriptionStatus === 'trialing' || subscriptionStatus === 'none') && (
-            <p className="text-xs text-[#9CA3AF] leading-relaxed">
-              Upgrade to unlock unlimited lists, collaborators, and all features.
-            </p>
-          )}
+          <p className="text-xs text-[#9CA3AF] leading-relaxed">
+            Every feature is free to use, no card required. If you find this useful,
+            you can support the developer below.
+          </p>
+        </section>
+
+        {/* Support the developer */}
+        <section className="bg-white rounded-2xl border border-[#E5E5E0]/60 p-5 sm:p-6">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-9 h-9 rounded-xl bg-rose-50 flex items-center justify-center">
+              <Heart className="w-4.5 h-4.5 text-rose-500" />
+            </div>
+            <h2 className="font-semibold text-[#1A1A1A]">Support the developer</h2>
+          </div>
+          <p className="text-xs text-[#9CA3AF] leading-relaxed mb-4">
+            Bagged is free and built by one person. If it saves you time, a small
+            contribution helps keep it running and improving.
+          </p>
+          <a
+            href={SUPPORT_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full h-11 flex items-center justify-center gap-2 bg-[#1A1A1A] text-white rounded-xl text-sm font-medium hover:bg-[#333] active:scale-[0.98] transition-all"
+          >
+            <Heart className="w-4 h-4" />
+            Support Bagged
+          </a>
         </section>
 
         {/* Preferences */}
@@ -231,7 +238,7 @@ export default function SettingsPage() {
 
         {/* Footer info */}
         <div className="text-center py-6">
-          <p className="text-xs text-[#C4C4BC]">ListTogether v1.0</p>
+          <p className="text-xs text-[#C4C4BC]">Bagged v1.0</p>
         </div>
       </div>
     </div>

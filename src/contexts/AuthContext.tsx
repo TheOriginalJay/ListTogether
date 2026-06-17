@@ -103,14 +103,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error) return { error: error.message };
 
       if (data.user) {
-        const trialEndsAt = new Date();
-        trialEndsAt.setDate(trialEndsAt.getDate() + 5);
+        // Service is free until further notice — no trial, full access.
         await supabase.from('users').insert({
           id: data.user.id,
           email: data.user.email!,
           full_name: fullName,
-          subscription_status: 'trialing',
-          trial_ends_at: trialEndsAt.toISOString(),
+          subscription_status: 'active',
+          trial_ends_at: null,
         });
       }
       await fetchUser();

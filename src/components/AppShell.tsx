@@ -1,10 +1,10 @@
 import { Outlet, useNavigate, useLocation } from 'react-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffect } from 'react';
-import { ShoppingCart, Settings, Home, Plus, AlertTriangle } from 'lucide-react';
+import { ShoppingBag, Settings, Home, Plus } from 'lucide-react';
 
 export function AppShell() {
-  const { isAuthenticated, loading, trialDaysLeft, subscriptionStatus } = useAuth();
+  const { isAuthenticated, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -35,32 +35,14 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen bg-[#FAFAF8] flex flex-col">
-      {/* Trial expiry banner — shown when 2 or fewer days remain */}
-      {subscriptionStatus === 'trialing' && trialDaysLeft <= 2 && (
-        <div className="fixed top-0 left-0 right-0 z-[60] bg-[#D97706] text-white px-4 py-2.5 flex items-center justify-center gap-2 text-sm font-medium shadow-md">
-          <AlertTriangle className="w-4 h-4 shrink-0" />
-          <span>
-            {trialDaysLeft === 0
-              ? 'Your free trial has expired. Upgrade to keep access.'
-              : `Your free trial ends in ${trialDaysLeft} day${trialDaysLeft === 1 ? '' : 's'}.`}
-          </span>
-          <button
-            onClick={() => navigate('/settings')}
-            className="ml-2 underline underline-offset-2 hover:no-underline font-semibold whitespace-nowrap"
-          >
-            Upgrade now →
-          </button>
-        </div>
-      )}
-
-      <div className={`flex flex-1 ${subscriptionStatus === 'trialing' && trialDaysLeft <= 2 ? 'pt-[41px]' : ''}`}>
+      <div className="flex flex-1">
       {/* Desktop sidebar */}
       <aside className="hidden sm:flex flex-col items-center w-[72px] fixed left-0 top-0 bottom-0 bg-white border-r border-[#E5E5E0]/60 z-50 py-5 gap-1">
         <button
           onClick={() => navigate('/dashboard')}
           className="w-10 h-10 rounded-xl bg-[#1A1A1A] flex items-center justify-center mb-6 hover:bg-[#333] transition-colors"
         >
-          <ShoppingCart className="w-4 h-4 text-white" />
+          <ShoppingBag className="w-4 h-4 text-white" />
         </button>
 
         <nav className="flex flex-col gap-1">

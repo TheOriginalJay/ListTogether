@@ -1,14 +1,14 @@
 import Dexie, { type Table } from 'dexie';
 import type { OfflineMutation, ListItem, ShoppingList } from '@/types';
 
-export class ListTogetherDB extends Dexie {
+export class BaggedDB extends Dexie {
   mutations!: Table<OfflineMutation>;
   items!: Table<ListItem>;
   lists!: Table<ShoppingList>;
   settings!: Table<{ key: string; value: unknown }>;
 
   constructor() {
-    super('ListTogetherDB');
+    super('BaggedDB');
     this.version(1).stores({
       mutations: 'id, type, created_at, retry_count',
       items: 'id, list_id, category, sort_order, is_checked, updated_at',
@@ -18,7 +18,7 @@ export class ListTogetherDB extends Dexie {
   }
 }
 
-export const db = new ListTogetherDB();
+export const db = new BaggedDB();
 
 // Offline mutation queue
 export async function queueMutation(mutation: Omit<OfflineMutation, 'id' | 'created_at' | 'retry_count'>) {

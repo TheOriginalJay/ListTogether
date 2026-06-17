@@ -1,4 +1,4 @@
--- Supabase Database Schema for ListTogether
+-- Supabase Database Schema for Bagged (formerly ListTogether)
 
 -- 1. Create the Users table (Profiles)
 create table users (
