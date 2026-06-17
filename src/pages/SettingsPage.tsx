@@ -4,6 +4,7 @@ import { LogOut, Trash2, User, Sparkles, LayoutGrid, LayoutList, Columns3, Bell,
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import type { LayoutMode } from '@/types';
+import { InstallPrompt } from '@/components/InstallPrompt';
 
 // Whop checkout/support link — same platform used for payments.
 // Set VITE_WHOP_SUPPORT_URL in the environment to your real Whop link.
@@ -67,6 +68,9 @@ export default function SettingsPage() {
             </button>
           </div>
         </section>
+
+        {/* Install (only shows when installable and not already installed) */}
+        <InstallPrompt variant="card" />
 
         {/* Plan */}
         <section className="bg-white rounded-2xl border border-[#E5E5E0]/60 p-5 sm:p-6">

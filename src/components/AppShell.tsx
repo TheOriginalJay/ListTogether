@@ -2,6 +2,7 @@ import { Outlet, useNavigate, useLocation } from 'react-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffect } from 'react';
 import { ShoppingBag, Settings, Home, Plus } from 'lucide-react';
+import { InstallPrompt } from '@/components/InstallPrompt';
 
 export function AppShell() {
   const { isAuthenticated, loading } = useAuth();
@@ -35,6 +36,7 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen bg-[#FAFAF8] flex flex-col">
+      <InstallPrompt variant="banner" />
       <div className="flex flex-1">
       {/* Desktop sidebar */}
       <aside className="hidden sm:flex flex-col items-center w-[72px] fixed left-0 top-0 bottom-0 bg-white border-r border-[#E5E5E0]/60 z-50 py-5 gap-1">

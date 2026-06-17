@@ -1,0 +1,24 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="512" y2="512" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#26261F"/>
+      <stop offset="1" stop-color="#161614"/>
+    </linearGradient>
+    <linearGradient id="bag" x1="158" y1="200" x2="354" y2="392" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#F2F1EC"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Full-bleed background (safe for maskable icons) -->
+  <rect width="512" height="512" fill="url(#bg)"/>
+
+  <!-- Bag handle -->
+  <path d="M202 214 C202 150 310 150 310 214" stroke="#FFFFFF" stroke-width="22" stroke-linecap="round" fill="none" opacity="0.92"/>
+
+  <!-- Bag body -->
+  <rect x="156" y="200" width="200" height="192" rx="26" fill="url(#bag)"/>
+
+  <!-- Amber check on the bag -->
+  <path d="M210 300 L242 333 L302 266" stroke="#F59E0B" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+</svg>
