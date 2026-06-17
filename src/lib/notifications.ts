@@ -58,8 +58,9 @@ export async function clearAllNotifications(): Promise<void> {
 }
 
 export function subscribeNotifications(userId: string, callback: () => void) {
+  // Unique channel name so multiple subscribers (nav badge + page) never collide on topic.
   return supabase
-    .channel(`notifications_${userId}`)
+    .channel(`notifications:${userId}:${crypto.randomUUID()}`)
     .on('postgres_changes',
       { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
       callback)

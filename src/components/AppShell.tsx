@@ -27,6 +27,8 @@ export function AppShell() {
   }, [isAuthenticated]);
 
   const [unread, setUnread] = useState(0);
+
+  // Subscribe to notification changes once per user (not per navigation).
   useEffect(() => {
     if (!user?.id) return;
     let active = true;
@@ -34,7 +36,13 @@ export function AppShell() {
     refresh();
     const ch = subscribeNotifications(user.id, refresh);
     return () => { active = false; ch.unsubscribe(); };
-  }, [user?.id, location.pathname]);
+  }, [user?.id]);
+
+  // Refresh the badge when the route changes (e.g. after reading on the Alerts page).
+  useEffect(() => {
+    if (!user?.id) return;
+    getUnreadCount().then(setUnread).catch(() => {});
+  }, [location.pathname, user?.id]);
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -136,7 +144,8 @@ export function AppShell() {
         <Outlet />
       </main>
 
-      {/* Mobile bottom nav */}
+      {/* Mobile bottom nav — hidden on a list detail (its own add-item bar sits at the bottom) */}
+      {!location.pathname.startsWith('/list/') && (
       <nav className="sm:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-[#E5E5E0]/60 flex items-center justify-around z-50 px-1">
         {NAV_ITEMS.slice(0, 2).map(({ path, label, icon: Icon }) => (
           <button
@@ -177,6 +186,7 @@ export function AppShell() {
           </button>
         ))}
       </nav>
+      )}
       </div>
     </div>
   );

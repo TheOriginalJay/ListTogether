@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { X, Send, MessageSquare, Trash2 } from 'lucide-react';
+import { X, Send, MessageSquare, Trash2, Users } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
-import { getMessages, sendMessage, deleteMessage, subscribeMessages, type ChatMessage } from '@/lib/chat';
+import { getMessages, sendMessage, deleteMessage, subscribeMessages, getListMembers, type ChatMessage, type ListMember } from '@/lib/chat';
 
 function senderName(m: ChatMessage): string {
   return m.sender?.full_name || m.sender?.email?.split('@')[0] || 'Someone';
+}
+
+function initials(name: string): string {
+  return name.trim().slice(0, 1).toUpperCase() || '?';
 }
 
 function timeLabel(iso: string): string {
@@ -16,6 +20,7 @@ export function ChatPanel({ listId, listName, onClose }: { listId: string; listN
   const { user } = useAuth();
   const { showToast } = useToast();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [members, setMembers] = useState<ListMember[]>([]);
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -28,6 +33,10 @@ export function ChatPanel({ listId, listName, onClose }: { listId: string; listN
   }, [listId, showToast]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    getListMembers(listId).then(setMembers).catch(() => {});
+  }, [listId]);
 
   useEffect(() => {
     const ch = subscribeMessages(listId, load);
@@ -80,6 +89,33 @@ export function ChatPanel({ listId, listName, onClose }: { listId: string; listN
           </button>
         </div>
 
+        {/* Participants */}
+        {members.length > 0 && (
+          <div className="bg-white border-b border-[#E5E5E0]/60 px-4 py-2.5 shrink-0">
+            <div className="flex items-center gap-1.5 mb-2 text-[#9CA3AF]">
+              <Users className="w-3.5 h-3.5" />
+              <span className="text-[11px] font-semibold uppercase tracking-wider">
+                {members.length} {members.length === 1 ? 'member' : 'members'}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              {members.map(member => (
+                <div key={member.id} className="flex items-center gap-1.5 bg-[#F5F5F0] rounded-full pl-1 pr-2.5 py-1 shrink-0">
+                  <span className="w-5 h-5 rounded-full bg-[#D97706] text-white text-[10px] font-bold flex items-center justify-center">
+                    {initials(member.name)}
+                  </span>
+                  <span className="text-xs font-medium text-[#1A1A1A] whitespace-nowrap">
+                    {member.id === user?.id ? 'You' : member.name}
+                  </span>
+                  {member.role === 'owner' && (
+                    <span className="text-[9px] font-semibold uppercase tracking-wide text-[#D97706]">owner</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Messages */}
         <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
           {loading ? (
@@ -96,7 +132,9 @@ export function ChatPanel({ listId, listName, onClose }: { listId: string; listN
               const mine = m.user_id === user?.id;
               return (
                 <div key={m.id} className={`group flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
-                  {!mine && <span className="text-[11px] font-semibold text-[#6B6B5F] mb-0.5 ml-1">{senderName(m)}</span>}
+                  <span className={`text-[11px] font-semibold mb-0.5 ${mine ? 'mr-1 text-[#9CA3AF]' : 'ml-1 text-[#6B6B5F]'}`}>
+                    {mine ? 'You' : senderName(m)}
+                  </span>
                   <div className="flex items-end gap-1.5 max-w-[80%]">
                     {mine && (
                       <button onClick={() => handleDelete(m.id)} className="p-1 text-[#C4C4BC] hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity" aria-label="Delete message">
