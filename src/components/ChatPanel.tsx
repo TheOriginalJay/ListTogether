@@ -1,12 +1,8 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { X, Send, MessageSquare, Trash2, Users } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import { getMessages, sendMessage, deleteMessage, subscribeMessages, getListMembers, type ChatMessage, type ListMember } from '@/lib/chat';
-
-function senderName(m: ChatMessage): string {
-  return m.sender?.full_name || m.sender?.email?.split('@')[0] || 'Someone';
-}
 
 function initials(name: string): string {
   return name.trim().slice(0, 1).toUpperCase() || '?';
@@ -37,6 +33,8 @@ export function ChatPanel({ listId, listName, onClose }: { listId: string; listN
   useEffect(() => {
     getListMembers(listId).then(setMembers).catch(() => {});
   }, [listId]);
+
+  const nameById = useMemo(() => new Map(members.map(m => [m.id, m.name])), [members]);
 
   useEffect(() => {
     const ch = subscribeMessages(listId, load);
@@ -133,7 +131,7 @@ export function ChatPanel({ listId, listName, onClose }: { listId: string; listN
               return (
                 <div key={m.id} className={`group flex flex-col ${mine ? 'items-end' : 'items-start'}`}>
                   <span className={`text-[11px] font-semibold mb-0.5 ${mine ? 'mr-1 text-[#9CA3AF]' : 'ml-1 text-[#6B6B5F]'}`}>
-                    {mine ? 'You' : senderName(m)}
+                    {mine ? 'You' : (nameById.get(m.user_id ?? '') || 'Member')}
                   </span>
                   <div className="flex items-end gap-1.5 max-w-[80%]">
                     {mine && (

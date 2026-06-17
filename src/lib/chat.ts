@@ -6,7 +6,6 @@ export interface ChatMessage {
   user_id: string | null;
   body: string;
   created_at: string;
-  sender?: { full_name: string | null; email: string | null } | null;
 }
 
 export interface ListMember {
@@ -15,34 +14,17 @@ export interface ListMember {
   role: 'owner' | 'editor' | 'viewer';
 }
 
-function displayName(u: { full_name?: string | null; email?: string | null } | null | undefined): string {
-  return u?.full_name || u?.email?.split('@')[0] || 'Member';
-}
-
-/** All people on a list: the owner plus accepted collaborators. */
+/** All people on a list (owner + collaborators), names only — never email. */
 export async function getListMembers(listId: string): Promise<ListMember[]> {
-  const { data: list } = await supabase
-    .from('lists')
-    .select('owner_id, owner:users(full_name, email)')
-    .eq('id', listId)
-    .single();
-
-  const { data: collabs } = await supabase
-    .from('list_collaborators')
-    .select('user_id, role, user:users(full_name, email)')
-    .eq('list_id', listId);
+  const { data, error } = await supabase.rpc('get_list_members', { p_list_id: listId });
+  if (error) { console.error('members:', error); return []; }
 
   const members: ListMember[] = [];
   const seen = new Set<string>();
-
-  if (list?.owner_id) {
-    members.push({ id: list.owner_id, name: displayName(list.owner as never), role: 'owner' });
-    seen.add(list.owner_id);
-  }
-  for (const c of collabs || []) {
-    if (!c.user_id || seen.has(c.user_id)) continue;
-    seen.add(c.user_id);
-    members.push({ id: c.user_id, name: displayName(c.user as never), role: c.role === 'viewer' ? 'viewer' : 'editor' });
+  for (const m of (data || []) as ListMember[]) {
+    if (!m.id || seen.has(m.id)) continue;
+    seen.add(m.id);
+    members.push(m);
   }
   return members;
 }
@@ -50,7 +32,7 @@ export async function getListMembers(listId: string): Promise<ListMember[]> {
 export async function getMessages(listId: string): Promise<ChatMessage[]> {
   const { data, error } = await supabase
     .from('messages')
-    .select('*, sender:users(full_name, email)')
+    .select('id, list_id, user_id, body, created_at')
     .eq('list_id', listId)
     .order('created_at', { ascending: true })
     .limit(500);
@@ -64,7 +46,7 @@ export async function sendMessage(listId: string, body: string): Promise<ChatMes
   const { data, error } = await supabase
     .from('messages')
     .insert({ list_id: listId, user_id: user.id, body })
-    .select('*, sender:users(full_name, email)')
+    .select('id, list_id, user_id, body, created_at')
     .single();
   if (error) throw error;
   return data as ChatMessage;
