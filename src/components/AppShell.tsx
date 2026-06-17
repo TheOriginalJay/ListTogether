@@ -1,22 +1,34 @@
 import { Outlet, useNavigate, useLocation } from 'react-router';
 import { useAuth } from '@/contexts/AuthContext';
-import { useEffect } from 'react';
-import { ShoppingBag, Settings, Home, Plus, StickyNote, Bell } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { ShoppingBag, Settings, Home, Plus, StickyNote, AlarmClock, Bell } from 'lucide-react';
 import { InstallPrompt } from '@/components/InstallPrompt';
 import { useReminderNotifications } from '@/hooks/useReminderNotifications';
+import { getUnreadCount, subscribeNotifications } from '@/lib/notifications';
 
 const NAV_ITEMS = [
   { path: '/dashboard', label: 'Lists', icon: Home },
   { path: '/notes', label: 'Notes', icon: StickyNote },
-  { path: '/reminders', label: 'Reminders', icon: Bell },
+  { path: '/reminders', label: 'Reminders', icon: AlarmClock },
+  { path: '/notifications', label: 'Alerts', icon: Bell, badge: true },
   { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
 export function AppShell() {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   useReminderNotifications();
+
+  const [unread, setUnread] = useState(0);
+  useEffect(() => {
+    if (!user?.id) return;
+    let active = true;
+    const refresh = () => { getUnreadCount().then(c => { if (active) setUnread(c); }).catch(() => {}); };
+    refresh();
+    const ch = subscribeNotifications(user.id, refresh);
+    return () => { active = false; ch.unsubscribe(); };
+  }, [user?.id, location.pathname]);
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -81,11 +93,11 @@ export function AppShell() {
         </button>
 
         <nav className="flex flex-col gap-1">
-          {NAV_ITEMS.map(({ path, label, icon: Icon }) => (
+          {NAV_ITEMS.map(({ path, label, icon: Icon, badge }) => (
             <button
               key={path}
               onClick={() => navigate(path)}
-              className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-200 ${
+              className={`relative w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-200 ${
                 isActive(path)
                   ? 'bg-[#D97706]/10 text-[#D97706]'
                   : 'text-[#9CA3AF] hover:text-[#1A1A1A] hover:bg-[#F5F5F0]'
@@ -93,6 +105,11 @@ export function AppShell() {
               title={label}
             >
               <Icon className="w-5 h-5" />
+              {badge && unread > 0 && (
+                <span className="absolute top-1.5 right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-[#D97706] text-white text-[9px] font-bold flex items-center justify-center">
+                  {unread > 9 ? '9+' : unread}
+                </span>
+              )}
             </button>
           ))}
         </nav>
@@ -114,12 +131,12 @@ export function AppShell() {
       </main>
 
       {/* Mobile bottom nav */}
-      <nav className="sm:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-[#E5E5E0]/60 flex items-center justify-around z-50 px-2">
+      <nav className="sm:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-[#E5E5E0]/60 flex items-center justify-around z-50 px-1">
         {NAV_ITEMS.slice(0, 2).map(({ path, label, icon: Icon }) => (
           <button
             key={path}
             onClick={() => navigate(path)}
-            className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-all ${
+            className={`flex flex-col items-center gap-1 px-2 py-2 rounded-xl transition-all ${
               isActive(path) ? 'text-[#D97706]' : 'text-[#9CA3AF]'
             }`}
           >
@@ -136,16 +153,21 @@ export function AppShell() {
           <Plus className="w-5 h-5 text-white" />
         </button>
 
-        {NAV_ITEMS.slice(2).map(({ path, label, icon: Icon }) => (
+        {NAV_ITEMS.slice(2).map(({ path, label, icon: Icon, badge }) => (
           <button
             key={path}
             onClick={() => navigate(path)}
-            className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-all ${
+            className={`relative flex flex-col items-center gap-1 px-2 py-2 rounded-xl transition-all ${
               isActive(path) ? 'text-[#D97706]' : 'text-[#9CA3AF]'
             }`}
           >
             <Icon className="w-5 h-5" />
             <span className="text-[10px] font-semibold">{label}</span>
+            {badge && unread > 0 && (
+              <span className="absolute top-0.5 right-1 min-w-[15px] h-[15px] px-1 rounded-full bg-[#D97706] text-white text-[9px] font-bold flex items-center justify-center">
+                {unread > 9 ? '9+' : unread}
+              </span>
+            )}
           </button>
         ))}
       </nav>

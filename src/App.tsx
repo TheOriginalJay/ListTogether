@@ -10,6 +10,7 @@ import DashboardPage from '@/pages/DashboardPage';
 import ListDetailPage from '@/pages/ListDetailPage';
 import NotesPage from '@/pages/NotesPage';
 import RemindersPage from '@/pages/RemindersPage';
+import NotificationsPage from '@/pages/NotificationsPage';
 import SettingsPage from '@/pages/SettingsPage';
 import PublicViewPage from '@/pages/PublicViewPage';
 import AuthCallbackPage from '@/pages/AuthCallbackPage';
@@ -53,6 +54,7 @@ function AppRoutes() {
         <Route path="/list/:listId" element={<ListDetailPage />} />
         <Route path="/notes" element={<NotesPage />} />
         <Route path="/reminders" element={<RemindersPage />} />
+        <Route path="/notifications" element={<NotificationsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
 

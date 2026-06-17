@@ -5,7 +5,7 @@ import {
   Check, Plus, X, Trash2, Edit3,
   AlertTriangle, ClipboardList, Settings, ArrowRight,
   Apple, Droplets, Beef, Croissant, Box, IceCream, Coffee, Bath, Cookie,
-  MoreHorizontal, Link2, Copy, CheckCircle2
+  MoreHorizontal, Link2, Copy, CheckCircle2, MessageSquare
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
@@ -21,6 +21,7 @@ import {
   addCachedItem, queueMutation, getOnlineStatus
 } from '@/lib/db';
 import { VoiceButton } from '@/components/VoiceButton';
+import { ChatPanel } from '@/components/ChatPanel';
 import type { ListItem, ShoppingList, LayoutMode, ParsedItem } from '@/types';
 
 const CATEGORY_ICONS: Record<string, any> = {
@@ -62,6 +63,7 @@ export default function ListDetailPage() {
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
   const [showShare, setShowShare] = useState(false);
+  const [showChat, setShowChat] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [showEditItem, setShowEditItem] = useState<ListItem | null>(null);
   const [showDuplicate, setShowDuplicate] = useState<ParsedItem | null>(null);
@@ -445,8 +447,16 @@ export default function ListDetailPage() {
                 <Settings className="w-4 h-4 sm:w-5 sm:h-5" />
               </button>
 
-              <button 
-                onClick={() => setShowShare(true)} 
+              <button
+                onClick={() => setShowChat(true)}
+                title="List chat"
+                className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl border border-[#E5E5E0] flex items-center justify-center text-[#6B6B5F] hover:text-[#1A1A1A] hover:border-[#1A1A1A]/20 transition-all"
+              >
+                <MessageSquare className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+
+              <button
+                onClick={() => setShowShare(true)}
                 className="h-9 sm:h-10 px-4 bg-[#1A1A1A] text-white rounded-xl flex items-center gap-2 text-sm font-medium hover:bg-[#333] active:scale-95 transition-all"
               >
                 <Share2 className="w-4 h-4" />
@@ -708,6 +718,11 @@ export default function ListDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Chat */}
+      {showChat && listId && (
+        <ChatPanel listId={listId} listName={list?.name || 'List'} onClose={() => setShowChat(false)} />
+      )}
 
       {/* Share Modal */}
       {showShare && (
