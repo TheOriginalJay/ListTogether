@@ -77,3 +77,35 @@ export interface AppSettings {
   defaultLayout: LayoutMode;
   moveCheckedToBottom: boolean;
 }
+
+// ── Notes ──────────────────────────────────────────────────────────────
+export type NoteColor = 'default' | 'amber' | 'rose' | 'green' | 'blue' | 'purple';
+
+export interface Note {
+  id: string;
+  owner_id: string;
+  title: string;
+  body: string;
+  color: NoteColor;
+  is_pinned: boolean;
+  is_archived: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+// ── Reminders ──────────────────────────────────────────────────────────
+export type ReminderPriority = 'none' | 'low' | 'medium' | 'high';
+
+export interface Reminder {
+  id: string;
+  owner_id: string;
+  title: string;
+  notes: string | null;
+  due_at: string | null;
+  remind_at: string | null;
+  priority: ReminderPriority;
+  is_completed: boolean;
+  completed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}

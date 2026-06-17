@@ -1,8 +1,15 @@
 import { Outlet, useNavigate, useLocation } from 'react-router';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEffect } from 'react';
-import { ShoppingBag, Settings, Home, Plus } from 'lucide-react';
+import { ShoppingBag, Settings, Home, Plus, StickyNote, Bell } from 'lucide-react';
 import { InstallPrompt } from '@/components/InstallPrompt';
+
+const NAV_ITEMS = [
+  { path: '/dashboard', label: 'Lists', icon: Home },
+  { path: '/notes', label: 'Notes', icon: StickyNote },
+  { path: '/reminders', label: 'Reminders', icon: Bell },
+  { path: '/settings', label: 'Settings', icon: Settings },
+];
 
 export function AppShell() {
   const { isAuthenticated, loading } = useAuth();
@@ -29,9 +36,32 @@ export function AppShell() {
   if (!isAuthenticated) return null;
 
   const isActive = (path: string) => {
-    if (path === '/dashboard' && (location.pathname === '/dashboard' || location.pathname.startsWith('/list'))) return true;
-    if (path === '/settings' && location.pathname === '/settings') return true;
+    const p = location.pathname;
+    if (path === '/dashboard') return p === '/dashboard' || p.startsWith('/list');
+    if (path === '/notes') return p === '/notes' || p.startsWith('/note');
+    if (path === '/reminders') return p === '/reminders';
+    if (path === '/settings') return p === '/settings';
     return false;
+  };
+
+  // The global "+" creates the right thing for the current section.
+  const handleCreate = () => {
+    const p = location.pathname;
+    if (p.startsWith('/list/')) {
+      window.dispatchEvent(new CustomEvent('showCreateItem'));
+    } else if (p === '/notes' || p.startsWith('/note')) {
+      window.dispatchEvent(new CustomEvent('showCreateNote'));
+    } else if (p === '/reminders') {
+      window.dispatchEvent(new CustomEvent('showCreateReminder'));
+    } else {
+      // default: a new list (navigate to dashboard first if needed)
+      if (p !== '/dashboard') {
+        navigate('/dashboard');
+        setTimeout(() => window.dispatchEvent(new CustomEvent('showCreateList')), 120);
+      } else {
+        window.dispatchEvent(new CustomEvent('showCreateList'));
+      }
+    }
   };
 
   return (
@@ -43,45 +73,33 @@ export function AppShell() {
         <button
           onClick={() => navigate('/dashboard')}
           className="w-10 h-10 rounded-xl bg-[#1A1A1A] flex items-center justify-center mb-6 hover:bg-[#333] transition-colors"
+          title="Bagged"
         >
           <ShoppingBag className="w-4 h-4 text-white" />
         </button>
 
         <nav className="flex flex-col gap-1">
-          <button
-            onClick={() => navigate('/dashboard')}
-            className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-200 ${
-              isActive('/dashboard') 
-                ? 'bg-[#D97706]/10 text-[#D97706]' 
-                : 'text-[#9CA3AF] hover:text-[#1A1A1A] hover:bg-[#F5F5F0]'
-            }`}
-            title="My lists"
-          >
-            <Home className="w-5 h-5" />
-          </button>
-          <button
-            onClick={() => navigate('/settings')}
-            className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-200 ${
-              isActive('/settings') 
-                ? 'bg-[#D97706]/10 text-[#D97706]' 
-                : 'text-[#9CA3AF] hover:text-[#1A1A1A] hover:bg-[#F5F5F0]'
-            }`}
-            title="Settings"
-          >
-            <Settings className="w-5 h-5" />
-          </button>
+          {NAV_ITEMS.map(({ path, label, icon: Icon }) => (
+            <button
+              key={path}
+              onClick={() => navigate(path)}
+              className={`w-11 h-11 rounded-xl flex items-center justify-center transition-all duration-200 ${
+                isActive(path)
+                  ? 'bg-[#D97706]/10 text-[#D97706]'
+                  : 'text-[#9CA3AF] hover:text-[#1A1A1A] hover:bg-[#F5F5F0]'
+              }`}
+              title={label}
+            >
+              <Icon className="w-5 h-5" />
+            </button>
+          ))}
         </nav>
 
         <div className="mt-auto flex flex-col items-center gap-3">
           <button
-            onClick={() => {
-              if (location.pathname.startsWith('/list/')) {
-                window.dispatchEvent(new CustomEvent('showCreateItem'));
-              } else {
-                window.dispatchEvent(new CustomEvent('showCreateList'));
-              }
-            }}
+            onClick={handleCreate}
             className="w-11 h-11 rounded-xl bg-[#D97706] flex items-center justify-center hover:bg-[#B45309] active:scale-95 transition-all shadow-lg shadow-[#D97706]/20"
+            title="Create"
           >
             <Plus className="w-5 h-5 text-white" />
           </button>
@@ -94,40 +112,40 @@ export function AppShell() {
       </main>
 
       {/* Mobile bottom nav */}
-      <nav className="sm:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-[#E5E5E0]/60 flex items-center justify-around z-50 px-4">
-        <button
-          onClick={() => navigate('/dashboard')}
-          className={`flex flex-col items-center gap-1 px-4 py-2 rounded-xl transition-all ${
-            isActive('/dashboard') ? 'text-[#D97706]' : 'text-[#9CA3AF]'
-          }`}
-        >
-          <Home className="w-5 h-5" />
-          <span className="text-[10px] font-semibold">Lists</span>
-        </button>
+      <nav className="sm:hidden fixed bottom-0 left-0 right-0 h-16 bg-white border-t border-[#E5E5E0]/60 flex items-center justify-around z-50 px-2">
+        {NAV_ITEMS.slice(0, 2).map(({ path, label, icon: Icon }) => (
+          <button
+            key={path}
+            onClick={() => navigate(path)}
+            className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-all ${
+              isActive(path) ? 'text-[#D97706]' : 'text-[#9CA3AF]'
+            }`}
+          >
+            <Icon className="w-5 h-5" />
+            <span className="text-[10px] font-semibold">{label}</span>
+          </button>
+        ))}
 
         <button
-          onClick={() => {
-            if (location.pathname.startsWith('/list/')) {
-              window.dispatchEvent(new CustomEvent('showCreateItem'));
-            } else {
-              navigate('/dashboard');
-              setTimeout(() => window.dispatchEvent(new CustomEvent('showCreateList')), 100);
-            }
-          }}
-          className="w-12 h-12 rounded-2xl bg-[#D97706] flex items-center justify-center -mt-4 shadow-lg shadow-[#D97706]/25 active:scale-95 transition-all"
+          onClick={handleCreate}
+          className="w-12 h-12 rounded-2xl bg-[#D97706] flex items-center justify-center -mt-4 shadow-lg shadow-[#D97706]/25 active:scale-95 transition-all shrink-0"
+          aria-label="Create"
         >
           <Plus className="w-5 h-5 text-white" />
         </button>
 
-        <button
-          onClick={() => navigate('/settings')}
-          className={`flex flex-col items-center gap-1 px-4 py-2 rounded-xl transition-all ${
-            isActive('/settings') ? 'text-[#D97706]' : 'text-[#9CA3AF]'
-          }`}
-        >
-          <Settings className="w-5 h-5" />
-          <span className="text-[10px] font-semibold">Settings</span>
-        </button>
+        {NAV_ITEMS.slice(2).map(({ path, label, icon: Icon }) => (
+          <button
+            key={path}
+            onClick={() => navigate(path)}
+            className={`flex flex-col items-center gap-1 px-3 py-2 rounded-xl transition-all ${
+              isActive(path) ? 'text-[#D97706]' : 'text-[#9CA3AF]'
+            }`}
+          >
+            <Icon className="w-5 h-5" />
+            <span className="text-[10px] font-semibold">{label}</span>
+          </button>
+        ))}
       </nav>
       </div>
     </div>

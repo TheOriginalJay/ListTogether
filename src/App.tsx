@@ -8,6 +8,8 @@ import LoginPage from '@/pages/LoginPage';
 import SignupPage from '@/pages/SignupPage';
 import DashboardPage from '@/pages/DashboardPage';
 import ListDetailPage from '@/pages/ListDetailPage';
+import NotesPage from '@/pages/NotesPage';
+import RemindersPage from '@/pages/RemindersPage';
 import SettingsPage from '@/pages/SettingsPage';
 import PublicViewPage from '@/pages/PublicViewPage';
 import AuthCallbackPage from '@/pages/AuthCallbackPage';
@@ -49,6 +51,8 @@ function AppRoutes() {
       <Route element={<AppShell />}>
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/list/:listId" element={<ListDetailPage />} />
+        <Route path="/notes" element={<NotesPage />} />
+        <Route path="/reminders" element={<RemindersPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Route>
 
