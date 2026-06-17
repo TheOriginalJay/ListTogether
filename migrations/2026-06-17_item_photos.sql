@@ -8,9 +8,8 @@ insert into storage.buckets (id, name, public)
 values ('item-photos', 'item-photos', true)
 on conflict (id) do nothing;
 
-drop policy if exists "item photos public read" on storage.objects;
-create policy "item photos public read" on storage.objects for select
-  using (bucket_id = 'item-photos');
+-- NOTE: a public bucket serves objects via public URL without an RLS SELECT policy,
+-- so we intentionally do NOT add a broad read policy (it would allow listing/enumeration).
 
 drop policy if exists "item photos auth upload" on storage.objects;
 create policy "item photos auth upload" on storage.objects for insert to authenticated
