@@ -25,7 +25,9 @@ import { ChatPanel } from '@/components/ChatPanel';
 import { uploadItemPhoto } from '@/lib/storage';
 import type { ListItem, ShoppingList, LayoutMode, ParsedItem } from '@/types';
 
-const CATEGORY_ICONS: Record<string, any> = {
+type TouchEl = HTMLElement & { _touchX?: number; _touchY?: number };
+
+const CATEGORY_ICONS: Record<string, typeof Apple> = {
   Produce: Apple,
   Dairy: Droplets,
   Meat: Beef,
@@ -558,18 +560,18 @@ export default function ListDetailPage() {
                         <div
                           key={item.id}
                           onTouchStart={(e) => { 
-                            (e.currentTarget as any)._touchX = e.touches[0].clientX;
-                            (e.currentTarget as any)._touchY = e.touches[0].clientY;
+                            (e.currentTarget as TouchEl)._touchX = e.touches[0].clientX;
+                            (e.currentTarget as TouchEl)._touchY = e.touches[0].clientY;
                           }}
                           onTouchMove={(e) => {
-                            const diffX = e.touches[0].clientX - (e.currentTarget as any)._touchX;
-                            const diffY = e.touches[0].clientY - (e.currentTarget as any)._touchY;
+                            const diffX = e.touches[0].clientX - ((e.currentTarget as TouchEl)._touchX ?? 0);
+                            const diffY = e.touches[0].clientY - ((e.currentTarget as TouchEl)._touchY ?? 0);
                             if (Math.abs(diffX) > Math.abs(diffY) && diffX > 30) {
                               (e.currentTarget as HTMLElement).style.transform = `translateX(${Math.min(diffX * 0.5, 40)}px)`;
                             }
                           }}
                           onTouchEnd={(e) => {
-                            const diffX = e.changedTouches[0].clientX - (e.currentTarget as any)._touchX;
+                            const diffX = e.changedTouches[0].clientX - ((e.currentTarget as TouchEl)._touchX ?? 0);
                             (e.currentTarget as HTMLElement).style.transform = '';
                             if (diffX > 70) handleCheck(item);
                           }}
@@ -914,7 +916,7 @@ function ListSettingsForm({ list, onSave, onClose }: {
             <button
               key={opt.value}
               type="button"
-              onClick={() => setPrivacy(opt.value as any)}
+              onClick={() => setPrivacy(opt.value as ShoppingList['privacy'])}
               className={`w-full flex items-center gap-3 p-4 rounded-xl border transition-all text-left ${
                 privacy === opt.value 
                   ? 'border-[#D97706] bg-[#D97706]/5' 

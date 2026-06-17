@@ -1,16 +1,13 @@
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react';
 import { supabase } from '@/lib/supabase';
-import type { User, SubscriptionStatus } from '@/types';
+import type { User } from '@/types';
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
   isAuthenticated: boolean;
-  subscriptionStatus: SubscriptionStatus;
-  trialDaysLeft: number;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error?: string }>;
-  signInGoogle: () => Promise<void>;
   logOut: () => Promise<void>;
   refreshUser: () => Promise<void>;
 }
@@ -38,9 +35,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             id: authUser.id,
             email: authUser.email!,
             full_name: authUser.user_metadata?.full_name || '',
-            subscription_status: 'none',
+            avatar_url: authUser.user_metadata?.avatar_url ?? null,
+            subscription_status: 'active',
+            trial_ends_at: null,
             created_at: authUser.created_at,
-          } as any);
+          });
         } else {
           setUser(profile);
         }
@@ -73,9 +72,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             id: session.user.id,
             email: session.user.email!,
             full_name: session.user.user_metadata?.full_name || '',
-            subscription_status: 'none',
+            avatar_url: session.user.user_metadata?.avatar_url ?? null,
+            subscription_status: 'active',
+            trial_ends_at: null,
             created_at: session.user.created_at,
-          } as any);
+          });
         }
       } else {
         setUser(null);
@@ -114,16 +115,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       await fetchUser();
       return {};
-    } catch (err: any) {
-      return { error: err.message };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : 'Sign up failed' };
     }
-  };
-
-  const signInGoogle = async () => {
-    await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
-    });
   };
 
   const logOut = async () => {
@@ -131,21 +125,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   };
 
-  const trialDaysLeft = user?.trial_ends_at
-    ? Math.max(0, Math.ceil((new Date(user.trial_ends_at).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
-    : 0;
-
   return (
     <AuthContext.Provider
       value={{
         user,
         loading,
         isAuthenticated: !!user,
-        subscriptionStatus: user?.subscription_status || 'none',
-        trialDaysLeft,
         signIn,
         signUp,
-        signInGoogle,
         logOut,
         refreshUser: fetchUser,
       }}

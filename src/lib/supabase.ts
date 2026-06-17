@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createClient, type RealtimePostgresChangesPayload } from '@supabase/supabase-js';
 import type { User as UserProfile, ShoppingList, ListItem, ListCollaborator as Collaborator } from '@/types';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
@@ -58,16 +58,16 @@ export async function getUserLists(): Promise<ShoppingList[]> {
   if (collabError) console.error('Error fetching collaborator entries:', collabError);
 
   const collaboratedLists = (collabData || [])
-    .map((c: any) => c.lists)
+    .map((c: { lists: ShoppingList | ShoppingList[] | null }) => c.lists)
     .filter(Boolean)
-    .flat();
+    .flat() as ShoppingList[];
 
-  const allLists = [...(ownedLists || []), ...collaboratedLists];
+  const allLists: ShoppingList[] = [...((ownedLists as ShoppingList[]) || []), ...collaboratedLists];
 
-  const uniqueLists = Array.from(new Map(allLists.map((l: any) => [l.id, l])).values());
-  return (uniqueLists as any[]).sort((a, b) =>
+  const uniqueLists = Array.from(new Map(allLists.map(l => [l.id, l])).values());
+  return uniqueLists.sort((a, b) =>
     new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-  ) as ShoppingList[];
+  );
 }
 
 export async function createList(name: string, privacy: string): Promise<ShoppingList> {
@@ -237,7 +237,7 @@ export async function joinListByCode(code: string): Promise<string> {
 
   const { data: list, error: listError } = await supabase
     .rpc('get_list_by_invite_code', { p_code: normalizedCode })
-    .single() as { data: InviteCodeResult | null; error: any };
+    .single() as { data: InviteCodeResult | null; error: unknown };
 
   if (listError || !list) throw new Error('Invalid invite code');
 
@@ -275,7 +275,7 @@ export async function joinListByCode(code: string): Promise<string> {
   return list.id;
 }
 
-export function subscribeToList(listId: string, callback: (payload: any) => void) {
+export function subscribeToList(listId: string, callback: (payload: RealtimePostgresChangesPayload<ListItem>) => void) {
   return supabase
     .channel(`list_${listId}`)
     .on(
@@ -291,7 +291,7 @@ export function subscribeToList(listId: string, callback: (payload: any) => void
     .subscribe();
 }
 
-export function subscribeToListChanges(listId: string, callback: (payload: any) => void) {
+export function subscribeToListChanges(listId: string, callback: (payload: RealtimePostgresChangesPayload<ShoppingList>) => void) {
   return supabase
     .channel(`list_meta_${listId}`)
     .on(

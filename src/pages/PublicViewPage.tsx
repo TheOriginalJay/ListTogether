@@ -9,7 +9,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import type { ListItem, ShoppingList, LayoutMode } from '@/types';
 
-const CATEGORY_ICONS: Record<string, any> = {
+const CATEGORY_ICONS: Record<string, typeof Apple> = {
   Produce: Apple,
   Dairy: Droplets,
   Meat: Beef,
@@ -46,7 +46,7 @@ export default function PublicViewPage() {
         }
         
         setList(data as ShoppingList);
-        setItems((data as any).items || []);
+        setItems((data as ShoppingList & { items?: ListItem[] }).items || []);
       }
       setLoading(false);
     }).catch(err => {
@@ -62,8 +62,8 @@ export default function PublicViewPage() {
       await joinListByCode(list.invite_code);
       showToast('Joined household!', 'success');
       navigate(`/list/${list.id}`);
-    } catch (err: any) {
-      showToast(err.message || 'Failed to join', 'error');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to join', 'error');
     } finally {
       setJoining(false);
     }

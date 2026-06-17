@@ -43,7 +43,7 @@ export function htmlToText(html: string): string {
   // Already plain text (legacy notes)? return as-is.
   if (!/[<>]/.test(html)) return html;
   const doc = new DOMParser().parseFromString(html, 'text/html');
-  return (doc.body.textContent || '').replace(/ /g, ' ').trim();
+  return (doc.body.textContent || '').replace(/\s+/g, ' ').trim();
 }
 
 // Legacy notes were stored as plain text. Render them safely as HTML.

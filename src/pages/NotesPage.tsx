@@ -317,7 +317,9 @@ function NoteEditor({ note, onClose, onSaved, onDelete }: {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latest = useRef({ title, body, color, pinned });
-  latest.current = { title, body, color, pinned };
+  useEffect(() => {
+    latest.current = { title, body, color, pinned };
+  }, [title, body, color, pinned]);
 
   const save = useCallback(async () => {
     try {

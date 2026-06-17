@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router';
-import { ShoppingCart, ChevronRight, Lock, Users, Globe, X, Plus, LogIn, Search, CheckCircle2 } from 'lucide-react';
-import { useAuth } from '@/contexts/AuthContext';
+import { ShoppingCart, ChevronRight, Lock, Users, Globe, X, Plus, LogIn, Search } from 'lucide-react';
 import { useToast } from '@/contexts/ToastContext';
 import { getUserLists, createList, joinListByCode } from '@/lib/supabase';
 import type { ShoppingList } from '@/lib/supabase';
@@ -18,7 +17,6 @@ const PRIVACY_CONFIGS: Record<PrivacySetting, { icon: typeof Lock; label: string
 
 export default function DashboardPage() {
   const navigate = useNavigate();
-  const { trialDaysLeft, subscriptionStatus } = useAuth();
   const { showToast } = useToast();
   const [lists, setLists] = useState<ShoppingList[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,8 +68,8 @@ export default function DashboardPage() {
       showToast('List created', 'success');
       closeModal();
       navigate(`/list/${list.id}`);
-    } catch (err: any) {
-      showToast(err?.message || 'Failed to create list', 'error');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to create list', 'error');
     } finally {
       setCreating(false);
     }
@@ -90,8 +88,8 @@ export default function DashboardPage() {
       closeModal();
       await fetchLists();
       navigate(`/list/${listId}`);
-    } catch (err: any) {
-      showToast(err?.message || 'Invalid invite code', 'error');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Invalid invite code', 'error');
     } finally {
       setJoining(false);
     }
@@ -148,24 +146,6 @@ export default function DashboardPage() {
       </header>
 
       <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
-        {/* Trial banner */}
-        {subscriptionStatus === 'trialing' && trialDaysLeft > 0 && (
-          <div className="flex items-center justify-between gap-4 bg-amber-50 border border-amber-200/60 rounded-2xl px-5 py-4">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
-                <CheckCircle2 className="w-4 h-4 text-amber-600" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-amber-800">Trial active</p>
-                <p className="text-xs text-amber-600/70">{trialDaysLeft} day{trialDaysLeft !== 1 ? 's' : ''} remaining</p>
-              </div>
-            </div>
-            <button className="px-4 py-2 rounded-xl bg-[#D97706] text-white text-xs font-semibold hover:bg-[#B45309] active:scale-95 transition-all shrink-0">
-              Upgrade
-            </button>
-          </div>
-        )}
-
         {/* Lists */}
         {loading ? (
           <div className="space-y-3">
@@ -200,7 +180,7 @@ export default function DashboardPage() {
             {filteredLists.map(list => {
               const priv = PRIVACY_CONFIGS[(list.privacy as PrivacySetting)] || PRIVACY_CONFIGS.private;
               const PrivacyIcon = priv.icon;
-              const itemCount = (list as any).items?.count ?? 0;
+              const itemCount = (list as { items?: { count?: number } }).items?.count ?? 0;
 
               return (
                 <button
