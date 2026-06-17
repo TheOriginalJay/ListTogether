@@ -49,6 +49,7 @@ export interface ListItem {
   category: string;
   notes: string | null;
   estimated_price_cents: number | null;
+  image_url?: string | null;
   is_checked: boolean;
   sort_order: number;
   category_sort_order: number;

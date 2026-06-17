@@ -5,7 +5,7 @@ import {
   Check, Plus, X, Trash2, Edit3,
   AlertTriangle, ClipboardList, Settings, ArrowRight,
   Apple, Droplets, Beef, Croissant, Box, IceCream, Coffee, Bath, Cookie,
-  MoreHorizontal, Link2, Copy, CheckCircle2, MessageSquare
+  MoreHorizontal, Link2, Copy, CheckCircle2, MessageSquare, ImagePlus
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
@@ -22,6 +22,7 @@ import {
 } from '@/lib/db';
 import { VoiceButton } from '@/components/VoiceButton';
 import { ChatPanel } from '@/components/ChatPanel';
+import { uploadItemPhoto } from '@/lib/storage';
 import type { ListItem, ShoppingList, LayoutMode, ParsedItem } from '@/types';
 
 const CATEGORY_ICONS: Record<string, any> = {
@@ -603,6 +604,16 @@ export default function ListDetailPage() {
                             </div>
                           )}
 
+                          {/* Photo thumbnail */}
+                          {item.image_url && (
+                            <img
+                              src={item.image_url}
+                              alt=""
+                              loading="lazy"
+                              className={`rounded-lg object-cover shrink-0 border border-[#E5E5E0] ${layoutMode === 'compact' ? 'w-8 h-8' : 'w-11 h-11'} ${item.is_checked ? 'opacity-40' : ''}`}
+                            />
+                          )}
+
                           {/* Content */}
                           <div className="flex-1 min-w-0">
                             <h4 className={`font-semibold text-[#1A1A1A] tracking-tight truncate ${item.is_checked ? 'line-through text-[#9CA3AF]' : ''} ${layoutMode === 'compact' ? 'text-sm sm:text-base' : 'text-base sm:text-lg'}`}>
@@ -943,12 +954,30 @@ function EditItemForm({ item, onSave, onDelete, onClose }: {
   onDelete: (item: ListItem) => void;
   onClose: () => void;
 }) {
+  const { showToast } = useToast();
   const [name, setName] = useState(item.name);
   const [quantity, setQuantity] = useState(item.quantity.toString());
   const [unit, setUnit] = useState(item.unit || '');
   const [category, setCategory] = useState(item.category || 'Other');
   const [price, setPrice] = useState(item.estimated_price_cents ? (item.estimated_price_cents / 100).toFixed(2) : '');
   const [notes, setNotes] = useState(item.notes || '');
+  const [imageUrl, setImageUrl] = useState(item.image_url || '');
+  const [uploading, setUploading] = useState(false);
+  const photoRef = useRef<HTMLInputElement>(null);
+
+  const handlePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    setUploading(true);
+    try {
+      setImageUrl(await uploadItemPhoto(f));
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not upload photo', 'error');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const UNIT_OPTIONS = ['', 'pcs', 'kg', 'g', 'lb', 'oz', 'L', 'ml', 'cup', 'tbsp', 'tsp', 'pack', 'box', 'bag', 'bottle', 'can', 'bunch', 'loaf', 'dozen'];
   const CATEGORY_OPTIONS = ['Produce', 'Dairy', 'Meat', 'Bakery', 'Pantry', 'Frozen', 'Beverages', 'Household', 'Snacks', 'Other'];
@@ -963,6 +992,7 @@ function EditItemForm({ item, onSave, onDelete, onClose }: {
         category: category.trim(),
         estimated_price_cents: price ? Math.round(parseFloat(price) * 100) : null,
         notes: notes.trim() || null,
+        image_url: imageUrl || null,
       });
     }} className="space-y-5">
       <div>
@@ -1032,6 +1062,40 @@ function EditItemForm({ item, onSave, onDelete, onClose }: {
           className="w-full bg-[#F5F5F0] rounded-xl px-4 py-3.5 text-sm text-[#1A1A1A] placeholder:text-[#C4C4BC] focus:bg-white focus:ring-2 focus:ring-[#D97706]/20 focus:outline-none transition-all min-h-[100px] resize-none"
           placeholder="Add context..."
         />
+      </div>
+
+      <div>
+        <label className="text-xs font-semibold uppercase tracking-wider text-[#9CA3AF] block mb-2">Photo</label>
+        {imageUrl ? (
+          <div className="relative inline-block">
+            <img src={imageUrl} alt={name} className="w-28 h-28 object-cover rounded-xl border border-[#E5E5E0]" />
+            <button
+              type="button"
+              onClick={() => setImageUrl('')}
+              className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-[#1A1A1A] text-white flex items-center justify-center shadow-md hover:bg-[#333]"
+              aria-label="Remove photo"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => photoRef.current?.click()}
+            disabled={uploading}
+            className="w-28 h-28 rounded-xl border-2 border-dashed border-[#E5E5E0] flex flex-col items-center justify-center gap-1.5 text-[#9CA3AF] hover:border-[#D97706]/40 hover:text-[#D97706] transition-colors disabled:opacity-50"
+          >
+            {uploading ? (
+              <div className="w-5 h-5 border-2 border-[#E5E5E0] border-t-[#D97706] rounded-full animate-spin" />
+            ) : (
+              <>
+                <ImagePlus className="w-6 h-6" />
+                <span className="text-[11px] font-medium">Add photo</span>
+              </>
+            )}
+          </button>
+        )}
+        <input ref={photoRef} type="file" accept="image/*" onChange={handlePhoto} className="hidden" />
       </div>
 
       <div className="flex gap-3 pt-2">

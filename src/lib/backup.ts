@@ -84,6 +84,7 @@ export async function importBackup(file: File): Promise<ImportResult> {
         category: String(it.category ?? 'Uncategorized'),
         notes: it.notes ?? null,
         estimated_price_cents: typeof it.estimated_price_cents === 'number' ? it.estimated_price_cents : null,
+        image_url: (it.image_url as string) ?? null,
         is_checked: !!it.is_checked,
         sort_order: typeof it.sort_order === 'number' ? it.sort_order : i,
         category_sort_order: typeof it.category_sort_order === 'number' ? it.category_sort_order : 0,
