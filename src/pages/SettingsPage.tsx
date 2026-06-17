@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { useRef } from 'react';
-import { LogOut, Trash2, User, Sparkles, LayoutGrid, LayoutList, Columns3, Bell, AlertTriangle, Heart, Download, Upload, DatabaseBackup } from 'lucide-react';
+import { useRef, useEffect } from 'react';
+import { LogOut, Trash2, User, Sparkles, LayoutGrid, LayoutList, Columns3, Bell, AlertTriangle, Heart, Download, Upload, DatabaseBackup, Lock, RotateCcw } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/contexts/ToastContext';
 import type { LayoutMode } from '@/types';
 import { InstallPrompt } from '@/components/InstallPrompt';
-import { exportBackup, importBackup } from '@/lib/backup';
+import { exportBackup, importBackup, restoreLatestLocal } from '@/lib/backup';
+import { exportEncryptedBackup, importEncryptedBackup } from '@/lib/cryptoBackup';
+import { getLatestBackup } from '@/lib/db';
 
 // Whop checkout/support link — same platform used for payments.
 // Set VITE_WHOP_SUPPORT_URL in the environment to your real Whop link.
@@ -42,7 +44,14 @@ export default function SettingsPage() {
   };
 
   const fileRef = useRef<HTMLInputElement>(null);
-  const [busy, setBusy] = useState<'export' | 'import' | null>(null);
+  const encFileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState<'export' | 'import' | 'enc-export' | 'enc-import' | 'restore' | null>(null);
+  const [passphrase, setPassphrase] = useState('');
+  const [lastAuto, setLastAuto] = useState<number | null>(null);
+
+  useEffect(() => {
+    getLatestBackup().then(b => setLastAuto(b?.created_at ?? null)).catch(() => {});
+  }, []);
 
   const handleExport = async () => {
     setBusy('export');
@@ -66,6 +75,46 @@ export default function SettingsPage() {
       showToast(`Restored ${r.lists} lists, ${r.notes} notes, ${r.reminders} reminders`, 'success');
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Could not import backup', 'error');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleEncExport = async () => {
+    setBusy('enc-export');
+    try {
+      await exportEncryptedBackup(passphrase);
+      showToast('Encrypted backup downloaded', 'success');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not export', 'error');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleEncImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    if (!passphrase) { showToast('Enter the passphrase first', 'error'); return; }
+    setBusy('enc-import');
+    try {
+      const r = await importEncryptedBackup(file, passphrase);
+      showToast(`Restored ${r.lists} lists, ${r.notes} notes, ${r.reminders} reminders`, 'success');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Could not import', 'error');
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleRestoreLocal = async () => {
+    setBusy('restore');
+    try {
+      const r = await restoreLatestLocal();
+      showToast(`Restored ${r.lists} lists, ${r.notes} notes, ${r.reminders} reminders`, 'success');
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'No local backup yet', 'error');
     } finally {
       setBusy(null);
     }
@@ -266,6 +315,62 @@ export default function SettingsPage() {
             </button>
           </div>
           <input ref={fileRef} type="file" accept="application/json,.json" onChange={handleImport} className="hidden" />
+
+          {/* Auto local snapshot */}
+          <div className="mt-4 pt-4 border-t border-[#E5E5E0]/60 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-[#1A1A1A]">On-device snapshot</p>
+              <p className="text-xs text-[#9CA3AF] mt-0.5">
+                {lastAuto ? `Auto-saved ${new Date(lastAuto).toLocaleString()}` : 'Saves automatically once a day'}
+              </p>
+            </div>
+            <button
+              onClick={handleRestoreLocal}
+              disabled={busy !== null || !lastAuto}
+              className="h-9 px-3 flex items-center gap-1.5 border border-[#E5E5E0] rounded-xl text-xs font-medium text-[#1A1A1A] hover:bg-[#F5F5F0] transition-all disabled:opacity-50 shrink-0"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              {busy === 'restore' ? 'Restoring…' : 'Restore'}
+            </button>
+          </div>
+
+          {/* Encrypted backup */}
+          <div className="mt-4 pt-4 border-t border-[#E5E5E0]/60">
+            <div className="flex items-center gap-2 mb-2">
+              <Lock className="w-3.5 h-3.5 text-[#6B6B5F]" />
+              <p className="text-sm font-medium text-[#1A1A1A]">Encrypted backup</p>
+            </div>
+            <p className="text-xs text-[#9CA3AF] leading-relaxed mb-3">
+              Export a password-protected file (AES-256). Keep the passphrase safe — without
+              it the file can’t be restored.
+            </p>
+            <input
+              type="password"
+              value={passphrase}
+              onChange={e => setPassphrase(e.target.value)}
+              placeholder="Backup passphrase"
+              className="w-full bg-[#F5F5F0] rounded-xl px-4 py-2.5 text-sm font-medium text-[#1A1A1A] placeholder:text-[#C4C4BC] focus:bg-white focus:ring-2 focus:ring-[#D97706]/20 focus:outline-none transition-all mb-3"
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                onClick={handleEncExport}
+                disabled={busy !== null}
+                className="h-11 flex items-center justify-center gap-2 border border-[#E5E5E0] rounded-xl text-sm font-medium text-[#1A1A1A] hover:bg-[#F5F5F0] active:scale-[0.98] transition-all disabled:opacity-50"
+              >
+                <Download className="w-4 h-4" />
+                {busy === 'enc-export' ? 'Exporting…' : 'Export'}
+              </button>
+              <button
+                onClick={() => encFileRef.current?.click()}
+                disabled={busy !== null}
+                className="h-11 flex items-center justify-center gap-2 border border-[#E5E5E0] rounded-xl text-sm font-medium text-[#1A1A1A] hover:bg-[#F5F5F0] active:scale-[0.98] transition-all disabled:opacity-50"
+              >
+                <Upload className="w-4 h-4" />
+                {busy === 'enc-import' ? 'Importing…' : 'Import'}
+              </button>
+            </div>
+            <input ref={encFileRef} type="file" accept="application/json,.json" onChange={handleEncImport} className="hidden" />
+          </div>
         </section>
 
         {/* Account */}

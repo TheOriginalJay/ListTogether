@@ -2,6 +2,7 @@ import { supabase } from '@/lib/supabase';
 import { getUserLists, getListItems, createList, batchCreateItems } from '@/lib/supabase';
 import { getNotes, createNote, updateNote } from '@/lib/notes';
 import { getReminders, createReminder } from '@/lib/reminders';
+import { saveLocalBackup, getLatestBackup } from '@/lib/db';
 import type { ListItem } from '@/types';
 
 export interface BackupFile {
@@ -58,6 +59,11 @@ export async function importBackup(file: File): Promise<ImportResult> {
   } catch {
     throw new Error('That file isn’t valid JSON.');
   }
+  return importBackupData(data);
+}
+
+/** Restore from an already-parsed backup object (used by plain + encrypted import). */
+export async function importBackupData(data: BackupFile): Promise<ImportResult> {
   if (data?.app !== 'Bagged' || !Array.isArray(data.lists)) {
     throw new Error('This doesn’t look like a Bagged backup.');
   }
@@ -118,4 +124,25 @@ export async function importBackup(file: File): Promise<ImportResult> {
   }
 
   return result;
+}
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Save an on-device snapshot if the last automatic one is older than a day. */
+export async function autoLocalBackup(): Promise<void> {
+  try {
+    const latest = await getLatestBackup();
+    if (latest && Date.now() - latest.created_at < DAY_MS) return;
+    const data = await buildBackup();
+    await saveLocalBackup(JSON.stringify(data), true);
+  } catch {
+    /* best-effort; ignore */
+  }
+}
+
+/** Restore the most recent on-device snapshot. */
+export async function restoreLatestLocal(): Promise<ImportResult> {
+  const latest = await getLatestBackup();
+  if (!latest) throw new Error('No local backup found yet.');
+  return importBackupData(JSON.parse(latest.data));
 }

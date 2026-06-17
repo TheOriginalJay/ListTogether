@@ -1,11 +1,19 @@
 import Dexie, { type Table } from 'dexie';
 import type { OfflineMutation, ListItem, ShoppingList } from '@/types';
 
+export interface LocalBackup {
+  id: string;
+  created_at: number;
+  auto: boolean;
+  data: string; // JSON string of BackupFile
+}
+
 export class BaggedDB extends Dexie {
   mutations!: Table<OfflineMutation>;
   items!: Table<ListItem>;
   lists!: Table<ShoppingList>;
   settings!: Table<{ key: string; value: unknown }>;
+  backups!: Table<LocalBackup>;
 
   constructor() {
     super('BaggedDB');
@@ -14,6 +22,13 @@ export class BaggedDB extends Dexie {
       items: 'id, list_id, category, sort_order, is_checked, updated_at',
       lists: 'id, owner_id, updated_at',
       settings: 'key',
+    });
+    this.version(2).stores({
+      mutations: 'id, type, created_at, retry_count',
+      items: 'id, list_id, category, sort_order, is_checked, updated_at',
+      lists: 'id, owner_id, updated_at',
+      settings: 'key',
+      backups: 'id, created_at',
     });
   }
 }
@@ -108,3 +123,19 @@ export function setOnlineStatus(status: boolean) {
 
 window.addEventListener('online', () => { isOnline = true; });
 window.addEventListener('offline', () => { isOnline = false; });
+
+// Local on-device backup snapshots
+export async function saveLocalBackup(json: string, auto: boolean, keep = 7): Promise<void> {
+  await db.backups.add({ id: crypto.randomUUID(), created_at: Date.now(), auto, data: json });
+  const all = await db.backups.orderBy('created_at').reverse().toArray();
+  const stale = all.slice(keep);
+  if (stale.length) await db.backups.bulkDelete(stale.map(b => b.id));
+}
+
+export async function getLatestBackup(): Promise<LocalBackup | undefined> {
+  return (await db.backups.orderBy('created_at').reverse().limit(1).toArray())[0];
+}
+
+export async function listLocalBackups(): Promise<LocalBackup[]> {
+  return db.backups.orderBy('created_at').reverse().toArray();
+}

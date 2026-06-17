@@ -5,6 +5,7 @@ import { ShoppingBag, Settings, Home, Plus, StickyNote, AlarmClock, Bell } from 
 import { InstallPrompt } from '@/components/InstallPrompt';
 import { useReminderNotifications } from '@/hooks/useReminderNotifications';
 import { getUnreadCount, subscribeNotifications } from '@/lib/notifications';
+import { autoLocalBackup } from '@/lib/backup';
 
 const NAV_ITEMS = [
   { path: '/dashboard', label: 'Lists', icon: Home },
@@ -19,6 +20,11 @@ export function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   useReminderNotifications();
+
+  // Daily on-device snapshot (best-effort, once per session)
+  useEffect(() => {
+    if (isAuthenticated) autoLocalBackup();
+  }, [isAuthenticated]);
 
   const [unread, setUnread] = useState(0);
   useEffect(() => {
